@@ -1,103 +1,162 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+import { useAuth } from "@/components/providers-simple";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+export default function HomePage() {
+  const { user, loading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    console.log('HomePage - Current state:', { 
+      user: user ? { id: user.id, email: user.email, role: user.role } : null, 
+      loading 
+    });
+    
+    if (!loading && user) {
+      console.log('User is authenticated, redirecting to role-specific dashboard...');
+      // Redirect based on user role to specific dashboard
+      switch (user.role) {
+        case "inspector":
+          console.log('Redirecting inspector to /dashboard/inspector');
+          router.push("/dashboard/inspector");
+          break;
+        case "officer":
+        case "manager":
+        case "admin":
+          console.log(`Redirecting ${user.role} to /dashboard`);
+          // For now, redirect all non-inspector roles to the main dashboard
+          // This will show the appropriate dashboard based on their role via the dashboard layout
+          router.push("/dashboard");
+          break;
+        default:
+          console.log('Unknown role, redirecting to /dashboard/inspector');
+          router.push("/dashboard/inspector");
+      }
+    } else if (!loading && !user) {
+      console.log('No user authenticated, redirecting to login...');
+      router.push("/auth/login");
+    }
+  }, [user, loading, router]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary mx-auto"></div>
+          <p className="mt-4 text-muted-foreground">Loading authentication...</p>
+          <p className="mt-2 text-sm text-gray-500">This should only take a few seconds</p>
+          <button 
+            onClick={() => router.push("/auth/login")} 
+            className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+            Skip to Login
+          </button>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return null; // Will redirect to login
+  }
+
+  return (
+    <div className="min-h-screen bg-background p-6">
+      <div className="max-w-6xl mx-auto">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-foreground">
+            Welcome, {user.firstName || user.email}
+          </h1>
+        </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>My Inspections</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <Link href="/dashboard/inspections">
+                        <Button className="w-full">View Inspections</Button>
+                      </Link>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>New Inspection</CardTitle>
+                      <CardDescription>
+                        Start a new inspection
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <Link href="/inspections/new">
+                        <Button className="w-full">Create Inspection</Button>
+                      </Link>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Checklists</CardTitle>
+                      <CardDescription>
+                        Manage inspection checklists
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <Link href="/dashboard/checklists">
+                        <Button className="w-full">View Checklists</Button>
+                      </Link>
+                    </CardContent>
+                  </Card>
+
+          {user.role === 'admin' && (
+            <>
+              <Card>
+                <CardHeader>
+                  <CardTitle>User Management</CardTitle>
+                  <CardDescription>
+                    Manage users and roles
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Button className="w-full">Manage Users</Button>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>System Settings</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Button className="w-full">Settings</Button>
+                </CardContent>
+              </Card>
+            </>
+          )}
+        </div>
+
+        <div className="mt-8">
+          <Card>
+            <CardHeader>
+              <CardTitle>Account Information</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                <p><strong>Email:</strong> {user.email}</p>
+                <p><strong>Role:</strong> {user.role}</p>
+                <p><strong>Name:</strong> {user.firstName} {user.lastName}</p>
+                <p><strong>MFA Enabled:</strong> {user.mfaEnabled ? 'Yes' : 'No'}</p>
+                <p><strong>Last Login:</strong> {user.lastLoginAt ? user.lastLoginAt.toLocaleString() : 'Never'}</p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     </div>
   );
 }
