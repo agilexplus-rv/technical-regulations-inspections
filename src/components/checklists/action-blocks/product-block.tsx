@@ -18,12 +18,18 @@ interface ProductQuestion {
   options?: QuestionOption[];
   photosAllowed?: boolean;
   filesAllowed?: boolean;
+  enforceable?: boolean;
+  legislationId?: string;
+  articleNumber?: string;
 }
 
 interface ProductBlockProps {
   questions?: ProductQuestion[];
   onChange?: (questions: ProductQuestion[]) => void;
   readOnly?: boolean;
+  legislations?: Array<{id: string, name: string}>;
+  validationErrors?: Record<string, { title?: string; legislationId?: string; articleNumber?: string }>;
+  blockId?: string;
 }
 
 const defaultProductQuestions: Omit<ProductQuestion, "id">[] = [
@@ -70,7 +76,7 @@ const defaultProductQuestions: Omit<ProductQuestion, "id">[] = [
   },
 ];
 
-export function ProductBlock({ questions, onChange, readOnly = false }: ProductBlockProps) {
+export function ProductBlock({ questions, onChange, readOnly = false, legislations = [], validationErrors = {}, blockId = "" }: ProductBlockProps) {
   const [localQuestions, setLocalQuestions] = useState<ProductQuestion[]>(
     questions || defaultProductQuestions.map((q, index) => ({ ...q, id: `product_q_${index}` }))
   );
@@ -233,6 +239,70 @@ export function ProductBlock({ questions, onChange, readOnly = false }: ProductB
             />
           </div>
 
+          <div className="flex items-center justify-between">
+            <Label htmlFor={`enforceable-${question.id}`} className="text-xs">Enforceable</Label>
+            <Switch
+              id={`enforceable-${question.id}`}
+              checked={question.enforceable !== false}
+              onCheckedChange={(checked) => {
+                const updates: any = { enforceable: checked };
+                // If changing to info only, clear legislation fields
+                if (!checked) {
+                  updates.legislationId = "";
+                  updates.articleNumber = "";
+                }
+                handleQuestionChange(index, updates);
+              }}
+              disabled={readOnly}
+            />
+          </div>
+
+          {question.enforceable !== false && (
+            <>
+              <div>
+                <Label htmlFor={`legislation-${question.id}`} className="text-xs">Legislation *</Label>
+                <Select
+                  value={question.legislationId || ""}
+                  onValueChange={(value) =>
+                    handleQuestionChange(index, { legislationId: value })
+                  }
+                  disabled={readOnly}
+                >
+                  <SelectTrigger className={`h-9 ${validationErrors[`${blockId}-${question.id}`]?.legislationId ? "border-red-500" : ""}`}>
+                    <SelectValue placeholder="Select legislation" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {legislations.map((legislation) => (
+                      <SelectItem key={legislation.id} value={legislation.id}>
+                        {legislation.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {validationErrors[`${blockId}-${question.id}`]?.legislationId && (
+                  <p className="text-sm text-red-500 mt-1">{validationErrors[`${blockId}-${question.id}`].legislationId}</p>
+                )}
+              </div>
+
+              <div>
+                <Label htmlFor={`article-${question.id}`} className="text-xs">Article Number *</Label>
+                <Input
+                  id={`article-${question.id}`}
+                  value={question.articleNumber || ""}
+                  onChange={(e) =>
+                    handleQuestionChange(index, { articleNumber: e.target.value })
+                  }
+                  placeholder="Enter article number (e.g., Article 5, Section 2.1)"
+                  disabled={readOnly}
+                  className={`h-9 ${validationErrors[`${blockId}-${question.id}`]?.articleNumber ? "border-red-500" : ""}`}
+                />
+                {validationErrors[`${blockId}-${question.id}`]?.articleNumber && (
+                  <p className="text-sm text-red-500 mt-1">{validationErrors[`${blockId}-${question.id}`].articleNumber}</p>
+                )}
+              </div>
+            </>
+          )}
+
           <div>
             <Label className="text-xs">Question Type</Label>
             <Select
@@ -261,10 +331,13 @@ export function ProductBlock({ questions, onChange, readOnly = false }: ProductB
               value={question.title}
               onChange={(e) => handleQuestionChange(index, { title: e.target.value })}
               placeholder="e.g., Is the CE marking visible?"
-              className="h-9"
+              className={`h-9 ${validationErrors[`${blockId}-${question.id}`]?.title ? "border-red-500" : ""}`}
               disabled={readOnly}
               required
             />
+            {validationErrors[`${blockId}-${question.id}`]?.title && (
+              <p className="text-sm text-red-500 mt-1">{validationErrors[`${blockId}-${question.id}`].title}</p>
+            )}
           </div>
 
           <div>

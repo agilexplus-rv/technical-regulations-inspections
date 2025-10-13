@@ -30,6 +30,9 @@ interface QuestionFormData {
   legalRefs?: LegalReference[];
   photosAllowed?: boolean; // For question-level photo attachments
   filesAllowed?: boolean; // For question-level file attachments
+  enforceable?: boolean; // Whether question is enforceable or info only
+  legislationId?: string; // Selected legislation ID
+  articleNumber?: string; // Article number in free text
 }
 
 interface QuestionBlock {
@@ -52,11 +55,13 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
     name?: string;
     description?: string;
     blocks?: Record<string, string>;
+    questions?: Record<string, { title?: string; legislationId?: string; articleNumber?: string }>;
   }>({});
   const [movedBlockId, setMovedBlockId] = useState<string | null>(null);
   const [movedQuestionKey, setMovedQuestionKey] = useState<string | null>(null);
   const [showFloatingButtons, setShowFloatingButtons] = useState(false);
   const [expandedBlocks, setExpandedBlocks] = useState<Set<string>>(new Set());
+  const [legislations, setLegislations] = useState<Array<{id: string, name: string}>>([]);
   const addButtonsRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -101,6 +106,34 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
       return () => scrollContainer.removeEventListener('scroll', handleScroll);
     }
   }, [blocks.length]);
+
+  // Fetch legislations on component mount
+  useEffect(() => {
+    const fetchLegislations = async () => {
+      try {
+        const response = await fetch('/api/legislation');
+        if (response.ok) {
+          const data = await response.json();
+          setLegislations(data.legislations || []);
+        }
+      } catch (error) {
+        console.error('Failed to fetch legislations:', error);
+      }
+    };
+    
+    fetchLegislations();
+  }, []);
+
+  // Auto-dismiss error after 10 seconds
+  useEffect(() => {
+    if (error) {
+      const timer = setTimeout(() => {
+        setError(null);
+      }, 10000); // 10 seconds
+
+      return () => clearTimeout(timer);
+    }
+  }, [error]);
 
   const toggleBlockExpansion = (blockId: string) => {
     setExpandedBlocks(prev => {
@@ -167,6 +200,9 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
               options: [],
               validation: {},
               legalRefs: [],
+              enforceable: true,
+              legislationId: "",
+              articleNumber: "",
             },
             {
               id: `q${Date.now() + 3}`,
@@ -177,6 +213,9 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
               options: [],
               validation: {},
               legalRefs: [],
+              enforceable: true,
+              legislationId: "",
+              articleNumber: "",
             },
             {
               id: `q${Date.now() + 4}`,
@@ -187,6 +226,9 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
               options: [],
               validation: {},
               legalRefs: [],
+              enforceable: true,
+              legislationId: "",
+              articleNumber: "",
             }
           ],
           blockSettings: {
@@ -226,6 +268,9 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
       options: [],
       validation: {},
       legalRefs: [],
+      enforceable: true, // Default to enforceable
+      legislationId: "",
+      articleNumber: "",
     };
     
     setBlocks(blocks.map(block => 
@@ -444,6 +489,10 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
 
     if (hasProductBlock && !hasProductDetailsBlock) {
       setError("A Product block requires a Product Details block to be present in the checklist.");
+      // Scroll to top to show error message
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTop = 0;
+      }
       return;
     }
 
@@ -458,13 +507,77 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
       
       if (productDetailsIndex > productIndex) {
         setError("Product Details block must appear before the Product block. Please reorder your blocks.");
+        // Scroll to top to show error message
+        if (scrollContainerRef.current) {
+          scrollContainerRef.current.scrollTop = 0;
+        }
         return;
       }
     }
 
-    // If there are validation errors, show them and stop
+    // If there are basic validation errors, show them and stop
     if (Object.keys(errors).length > 0) {
       setValidationErrors(errors);
+      // Also show in main error banner
+      const errorMessages: string[] = [];
+      if (errors.name) errorMessages.push(errors.name);
+      if (errors.description) errorMessages.push(errors.description);
+      if (errors.blocks) {
+        Object.values(errors.blocks).forEach(msg => errorMessages.push(msg));
+      }
+      if (errorMessages.length > 0) {
+        setError(`Validation errors:\n${errorMessages.join('\n')}`);
+      }
+      // Scroll to top to show error message
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTop = 0;
+      }
+      return;
+    }
+
+    // Validate all questions
+    const enforceableErrors: string[] = [];
+    const questionErrors: Record<string, { title?: string; legislationId?: string; articleNumber?: string }> = {};
+    
+    blocks.forEach((block, blockIndex) => {
+      block.questions.forEach((question, questionIndex) => {
+        const questionKey = `${block.id}-${question.id}`;
+        
+        // Validate question title is always required (for all questions)
+        if (!question.title || !question.title.trim()) {
+          enforceableErrors.push(`Block ${blockIndex + 1}, Question ${questionIndex + 1}: Question title is required`);
+          if (!questionErrors[questionKey]) questionErrors[questionKey] = {};
+          questionErrors[questionKey].title = "Question title is required";
+        }
+        
+        // Check if question is enforceable (default is true)
+        const isEnforceable = question.enforceable !== false;
+        
+        if (isEnforceable) {
+          // Validate legislation is selected
+          if (!question.legislationId || !question.legislationId.trim()) {
+            enforceableErrors.push(`Block ${blockIndex + 1}, Question ${questionIndex + 1} ("${question.title || 'Untitled'}"): Legislation is required for enforceable questions`);
+            if (!questionErrors[questionKey]) questionErrors[questionKey] = {};
+            questionErrors[questionKey].legislationId = "Legislation is required";
+          }
+          
+          // Validate article number is provided
+          if (!question.articleNumber || !question.articleNumber.trim()) {
+            enforceableErrors.push(`Block ${blockIndex + 1}, Question ${questionIndex + 1} ("${question.title || 'Untitled'}"): Article number is required for enforceable questions`);
+            if (!questionErrors[questionKey]) questionErrors[questionKey] = {};
+            questionErrors[questionKey].articleNumber = "Article number is required";
+          }
+        }
+      });
+    });
+
+    if (enforceableErrors.length > 0) {
+      setError(`Validation errors:\n${enforceableErrors.join('\n')}`);
+      setValidationErrors({ questions: questionErrors });
+      // Scroll to top to show error message
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTop = 0;
+      }
       return;
     }
 
@@ -567,6 +680,21 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
           </div>
         </CardHeader>
         <CardContent ref={scrollContainerRef} className="space-y-6 overflow-y-auto flex-1">
+          {/* Error Alert at the top */}
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-md relative" role="alert">
+              <div className="flex items-start gap-2">
+                <svg className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+                <div className="flex-1">
+                  <strong className="font-semibold">Validation Error</strong>
+                  <div className="mt-1 text-sm whitespace-pre-line">{error}</div>
+                </div>
+              </div>
+            </div>
+          )}
+          
           {!previewMode ? (
             <>
               {/* Checklist Details */}
@@ -997,6 +1125,9 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
                                 }
                               }
                             }}
+                            legislations={legislations}
+                            validationErrors={validationErrors.questions || {}}
+                            blockId={block.id}
                           />
                         </div>
                       ) : (
@@ -1044,6 +1175,63 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
                             />
                           </div>
 
+                          <div className="flex items-center justify-between">
+                            <Label htmlFor={`enforceable-${block.id}-${questionIndex}`}>Enforceable</Label>
+                            <Switch
+                              id={`enforceable-${block.id}-${questionIndex}`}
+                              checked={question.enforceable !== false}
+                              onCheckedChange={(checked) => {
+                                const updates: any = { enforceable: checked };
+                                // If changing to info only, clear legislation fields
+                                if (!checked) {
+                                  updates.legislationId = "";
+                                  updates.articleNumber = "";
+                                }
+                                updateQuestion(block.id, questionIndex, updates);
+                              }}
+                            />
+                          </div>
+
+                          {question.enforceable !== false && (
+                            <>
+                              <div>
+                                <Label htmlFor={`legislation-${block.id}-${questionIndex}`}>Legislation *</Label>
+                                <Select
+                                  value={question.legislationId || ""}
+                                  onValueChange={(value) => updateQuestion(block.id, questionIndex, { legislationId: value })}
+                                >
+                                  <SelectTrigger className={validationErrors.questions?.[`${block.id}-${question.id}`]?.legislationId ? "border-red-500" : ""}>
+                                    <SelectValue placeholder="Select legislation" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {legislations.map((legislation) => (
+                                      <SelectItem key={legislation.id} value={legislation.id}>
+                                        {legislation.name}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                {validationErrors.questions?.[`${block.id}-${question.id}`]?.legislationId && (
+                                  <p className="text-sm text-red-500 mt-1">{validationErrors.questions[`${block.id}-${question.id}`].legislationId}</p>
+                                )}
+                              </div>
+
+                              <div>
+                                <Label htmlFor={`article-${block.id}-${questionIndex}`}>Article Number *</Label>
+                                <Input
+                                  id={`article-${block.id}-${questionIndex}`}
+                                  value={question.articleNumber || ""}
+                                  onChange={(e) => updateQuestion(block.id, questionIndex, { articleNumber: e.target.value })}
+                                  placeholder="Enter article number (e.g., Article 5, Section 2.1)"
+                                  className={validationErrors.questions?.[`${block.id}-${question.id}`]?.articleNumber ? "border-red-500" : ""}
+                                />
+                                {validationErrors.questions?.[`${block.id}-${question.id}`]?.articleNumber && (
+                                  <p className="text-sm text-red-500 mt-1">{validationErrors.questions[`${block.id}-${question.id}`].articleNumber}</p>
+                                )}
+                              </div>
+                            </>
+                          )}
+
                           <div>
                             <Label>Question Type</Label>
                             <Select
@@ -1070,7 +1258,11 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
                               onChange={(e) => updateQuestion(block.id, questionIndex, { title: e.target.value })}
                               placeholder="e.g., Is the CE marking visible?"
                               required
+                              className={validationErrors.questions?.[`${block.id}-${question.id}`]?.title ? "border-red-500" : ""}
                             />
+                            {validationErrors.questions?.[`${block.id}-${question.id}`]?.title && (
+                              <p className="text-sm text-red-500 mt-1">{validationErrors.questions[`${block.id}-${question.id}`].title}</p>
+                            )}
                           </div>
 
                           <div>
@@ -1198,6 +1390,51 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
                 <p className="text-sm text-muted-foreground mt-2">Version: {currentVersion}</p>
               </div>
 
+              {/* Checklist Settings Summary */}
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                <h3 className="font-semibold text-gray-900 mb-3">Checklist Settings</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-gray-700">Enforcement:</span>
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${
+                        enforcementAction 
+                          ? "bg-green-100 text-green-800" 
+                          : "bg-red-100 text-red-800"
+                      }`}>
+                        {enforcementAction ? "Enabled" : "Disabled"}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-gray-700">Sample Taking:</span>
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${
+                        sampleCollection 
+                          ? "bg-green-100 text-green-800" 
+                          : "bg-red-100 text-red-800"
+                      }`}>
+                        {sampleCollection ? "Enabled" : "Disabled"}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-gray-700">Repeatable:</span>
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${
+                        repeatable 
+                          ? "bg-green-100 text-green-800" 
+                          : "bg-red-100 text-red-800"
+                      }`}>
+                        {repeatable ? "Yes" : "No"}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-gray-700">Max Repetitions:</span>
+                      <span className="text-gray-600">{maxRepetitions || "Unlimited"}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {blocks.map((block) => (
                 <div key={block.id} className="space-y-4">
                   <div className="border-b pb-2">
@@ -1211,6 +1448,11 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
                       }`}>
                         {block.type === "action" ? "Action" : "Conditional"}
                       </span>
+                      {block.type === "action" && (
+                        <span className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-700 capitalize">
+                          {block.actionBlockType ? block.actionBlockType.replace(/_/g, " ") : "product"}
+                        </span>
+                      )}
                     </h3>
                     {block.description && (
                       <p className="text-sm text-muted-foreground">{block.description}</p>
@@ -1254,11 +1496,6 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
             </div>
           )}
 
-          {error && (
-            <div className="text-red-600 text-sm bg-red-50 p-3 rounded-md">
-              {error}
-            </div>
-          )}
         </CardContent>
       </Card>
     </div>

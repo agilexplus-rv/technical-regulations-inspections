@@ -18,6 +18,9 @@ interface ActionBlockSelectorProps {
   onBlockTypeChange?: (blockType: ActionBlockType) => void;
   readOnly?: boolean;
   disableTypeChange?: boolean; // Only disable the type selector, not the questions/settings
+  legislations?: Array<{id: string, name: string}>;
+  validationErrors?: Record<string, { title?: string; legislationId?: string; articleNumber?: string }>;
+  blockId?: string;
 }
 
 const actionBlockTypes = [
@@ -55,6 +58,9 @@ export function ActionBlockSelector({
   onBlockTypeChange,
   readOnly = false,
   disableTypeChange = false,
+  legislations = [],
+  validationErrors = {},
+  blockId = "",
 }: ActionBlockSelectorProps) {
   const [selectedType, setSelectedType] = useState<ActionBlockType>(blockType);
   const [localQuestions, setLocalQuestions] = useState<any[]>(questions || []);
@@ -117,6 +123,9 @@ export function ActionBlockSelector({
             questions={localQuestions}
             onChange={handleQuestionsChange}
             readOnly={readOnly}
+            legislations={legislations}
+            validationErrors={validationErrors}
+            blockId={blockId}
           />
         )}
         {selectedType === "product_details" && (
@@ -125,6 +134,9 @@ export function ActionBlockSelector({
             settings={localBlockSettings}
             onChange={handleQuestionsChange}
             readOnly={readOnly}
+            legislations={legislations}
+            validationErrors={validationErrors}
+            blockId={blockId}
           />
         )}
         {selectedType === "economic_operator" && (
@@ -132,6 +144,9 @@ export function ActionBlockSelector({
             questions={localQuestions}
             onChange={handleQuestionsChange}
             readOnly={readOnly}
+            legislations={legislations}
+            validationErrors={validationErrors}
+            blockId={blockId}
           />
         )}
         {selectedType === "custom" && (
@@ -139,6 +154,9 @@ export function ActionBlockSelector({
             questions={localQuestions}
             onChange={handleQuestionsChange}
             readOnly={readOnly}
+            legislations={legislations}
+            validationErrors={validationErrors}
+            blockId={blockId}
           />
         )}
       </div>
