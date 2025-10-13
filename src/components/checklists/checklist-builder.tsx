@@ -11,6 +11,8 @@ import { Loader2, Plus, Trash2, Eye, Save, X, FolderPlus, Folder, ArrowUp, Arrow
 import { createChecklist, updateChecklist } from "@/lib/server-actions/checklists";
 import { Checklist, ChecklistQuestion, QuestionType, ConditionalLogic, LegalReference, QuestionOption, QuestionValidation } from "@/types";
 import { ActionBlockSelector, ActionBlockType } from "./action-blocks";
+import { ConditionalBlockEditor } from "./conditional/conditional-block-editor";
+import { AvailableQuestion } from "@/types/conditional-logic";
 
 interface ChecklistBuilderProps {
   checklist?: Checklist;
@@ -43,6 +45,7 @@ interface QuestionBlock {
   description?: string;
   questions: QuestionFormData[];
   blockSettings?: any; // For Product Details block settings (photos/documents allowed)
+  conditionalData?: any; // For conditional blocks - stores condition logic and if/else content
 }
 
 type BlockType = "action" | "conditional";
@@ -62,6 +65,8 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
   const [showFloatingButtons, setShowFloatingButtons] = useState(false);
   const [expandedBlocks, setExpandedBlocks] = useState<Set<string>>(new Set());
   const [legislations, setLegislations] = useState<Array<{id: string, name: string}>>([]);
+  const [movedBlocks, setMovedBlocks] = useState<Array<{ id: string; title: string; type: string; actionBlockType?: string; questions: any[] }>>([]);
+  const [movedQuestions, setMovedQuestions] = useState<Array<{ id: string; blockId: string; title: string; type: string }>>([]);
   const addButtonsRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -168,6 +173,15 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
   };
 
   const addBlock = (type: BlockType) => {
+    // Validate: Conditional blocks cannot be added as the first block
+    if (type === "conditional" && blocks.length === 0) {
+      setError("Conditional blocks cannot be placed first. Please add at least one Action block before adding a Conditional block.");
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTop = 0;
+      }
+      return;
+    }
+
     const newBlock: QuestionBlock = {
       id: `block${Date.now()}`,
       type,
@@ -175,6 +189,29 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
       title: type === "action" ? "Action Block" : "Conditional Block",
       description: "",
       questions: [],
+      conditionalData: type === "conditional" ? {
+        id: `cond_${Date.now()}`,
+        title: "Conditional Block",
+        description: "",
+        condition: {
+          id: `cond_logic_${Date.now()}`,
+          operator: "AND",
+          items: []
+        },
+        ifTrue: {
+          existingBlockIds: [],
+          existingQuestionIds: [],
+          newBlocks: [],
+          newQuestions: []
+        },
+        ifFalse: {
+          existingBlockIds: [],
+          existingQuestionIds: [],
+          newBlocks: [],
+          newQuestions: []
+        },
+        testData: {}
+      } : undefined
     };
     
     // If adding an action block with product type, auto-add Product Details if it doesn't exist
@@ -243,7 +280,7 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
         // Scroll to the newly created block after state update
         setTimeout(() => scrollToBlock(newBlock.id), 100);
       } else {
-        setBlocks([...blocks, newBlock]);
+    setBlocks([...blocks, newBlock]);
         // Expand only the new block and collapse others
         setExpandedBlocks(new Set([newBlock.id]));
         // Scroll to the newly created block after state update
@@ -336,6 +373,15 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
     
     const block = blocks[blockIndex];
     const blockAbove = blocks[blockIndex - 1];
+    
+    // Prevent moving conditional block to first position
+    if (block.type === "conditional" && blockIndex === 1) {
+      setError("Conditional blocks cannot be placed first. They must have at least one block before them to reference questions.");
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTop = 0;
+      }
+      return;
+    }
     
     // Prevent moving Product block before Product Details block
     if (block.type === "action" && block.actionBlockType === "product" &&
@@ -515,6 +561,15 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
       }
     }
 
+    // Validate conditional blocks are not first
+    if (blocks.length > 0 && blocks[0].type === "conditional") {
+      setError("Conditional blocks cannot be placed first. They must have at least one block before them to reference questions.");
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTop = 0;
+      }
+      return;
+    }
+
     // If there are basic validation errors, show them and stop
     if (Object.keys(errors).length > 0) {
       setValidationErrors(errors);
@@ -636,11 +691,34 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
     { value: "boolean", label: "Yes/No" },
     { value: "single_choice", label: "Single Choice" },
     { value: "multi_choice", label: "Multiple Choice" },
-    { value: "photo", label: "Photo Upload" },
     { value: "number", label: "Number" },
     { value: "barcode", label: "Barcode" },
     { value: "ocr", label: "OCR/Text Recognition" },
   ];
+
+  // Helper function to get available questions for conditional block
+  const getAvailableQuestionsForBlock = (currentBlockIndex: number): AvailableQuestion[] => {
+    const available: AvailableQuestion[] = [];
+    
+    blocks.forEach((block, blockIndex) => {
+      // Only include questions from blocks that come BEFORE the current conditional block
+      if (blockIndex < currentBlockIndex) {
+        block.questions.forEach((question) => {
+          available.push({
+            id: question.id,
+            blockId: block.id,
+            blockTitle: block.title,
+            blockIndex: blockIndex,
+            title: question.title,
+            type: question.type,
+            isFromCurrentBlock: false
+          });
+        });
+      }
+    });
+    
+    return available;
+  };
 
   return (
     <div className="w-full mx-auto space-y-6 relative">
@@ -927,23 +1005,23 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
                           <div className="flex items-start gap-2">
                             <Folder className="h-5 w-5 text-blue-600 mt-0.5" />
                             <div className="flex-1">
-                              <h4 className="font-medium flex items-center gap-2">
+                            <h4 className="font-medium flex items-center gap-2">
                                 <span className="text-gray-600">Block {blockIndex + 1}:</span>
-                                {block.title}
-                                <span className={`text-xs px-2 py-1 rounded ${
-                                  block.type === "action" 
-                                    ? "bg-green-100 text-green-800" 
-                                    : "bg-blue-100 text-blue-800"
-                                }`}>
-                                  {block.type === "action" ? "Action" : "Conditional"}
+                              {block.title}
+                              <span className={`text-xs px-2 py-1 rounded ${
+                                block.type === "action" 
+                                  ? "bg-green-100 text-green-800" 
+                                  : "bg-blue-100 text-blue-800"
+                              }`}>
+                                {block.type === "action" ? "Action" : "Conditional"}
+                              </span>
+                              {block.type === "action" && block.actionBlockType && (
+                                <span className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-700 capitalize">
+                                  {block.actionBlockType.replace(/_/g, " ")}
                                 </span>
-                                {block.type === "action" && block.actionBlockType && (
-                                  <span className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-700 capitalize">
-                                    {block.actionBlockType.replace(/_/g, " ")}
-                                  </span>
-                                )}
-                              </h4>
-                              <p className="text-sm text-muted-foreground">{block.description}</p>
+                              )}
+                            </h4>
+                            <p className="text-sm text-muted-foreground">{block.description}</p>
                                {!expandedBlocks.has(block.id) && (
                                  <div className="text-xs text-gray-500 mt-2">
                                 {block.questions.length} question{block.questions.length !== 1 ? 's' : ''}
@@ -959,19 +1037,9 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
                           </div>
                         </div>
                         <div className="flex gap-2">
-                          {block.type === "conditional" && (
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => addQuestion(block.id)}
-                            >
-                              <Plus className="h-4 w-4 mr-1" />
-                              Add Question
-                            </Button>
-                          )}
-                          <Button
-                            variant="outline"
-                            size="sm"
                             onClick={() => moveBlockUp(blockIndex)}
                             disabled={
                               blockIndex === 0 ||
@@ -990,7 +1058,7 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
                             }
                           >
                             <ArrowUp className="h-4 w-4" />
-                          </Button>
+                            </Button>
                           <Button
                             variant="outline"
                             size="sm"
@@ -1038,7 +1106,7 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
                       {/* Collapsible Block Content */}
                       {expandedBlocks.has(block.id) && (
                         <div className="space-y-4">
-                          {/* Block Title/Description Edit */}
+                      {/* Block Title/Description Edit */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <Label>Block Title *</Label>
@@ -1131,7 +1199,170 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
                           />
                         </div>
                       ) : (
-                        // Conditional Block - Use original question rendering
+                        // Conditional Block - Use ConditionalBlockEditor
+                        <div className="border-t pt-4">
+                          <ConditionalBlockEditor
+                            blockData={block.conditionalData}
+                            availableQuestions={getAvailableQuestionsForBlock(blockIndex)}
+                            availableBlocks={blocks.filter((b, idx) => idx < blockIndex && b.id !== block.id)}
+                            movedBlocks={movedBlocks}
+                            movedQuestions={movedQuestions}
+                            currentBlockId={block.id}
+                            onChange={(conditionalData) => {
+                              updateBlock(block.id, { conditionalData });
+                            }}
+                            onMoveExistingBlock={(blockId, destination) => {
+                              // Remove block from main blocks array and add to conditional content
+                              const blockToMove = blocks.find(b => b.id === blockId);
+                              if (blockToMove) {
+                                // Store the moved block data
+                                setMovedBlocks(prev => [...prev, blockToMove]);
+                                
+                                // Remove from main blocks
+                                setBlocks(blocks.filter(b => b.id !== blockId));
+                                
+                                // Add to conditional block's content
+                                const updatedConditionalData = { ...block.conditionalData };
+                                if (destination === "ifTrue") {
+                                  updatedConditionalData.ifTrue = {
+                                    ...updatedConditionalData.ifTrue,
+                                    existingBlockIds: [...(updatedConditionalData.ifTrue?.existingBlockIds || []), blockId]
+                                  };
+                                } else {
+                                  updatedConditionalData.ifFalse = {
+                                    ...updatedConditionalData.ifFalse,
+                                    existingBlockIds: [...(updatedConditionalData.ifFalse?.existingBlockIds || []), blockId]
+                                  };
+                                }
+                                updateBlock(block.id, { conditionalData: updatedConditionalData });
+                              }
+                            }}
+                            onMoveExistingQuestion={(questionId, destination) => {
+                              // Remove question from its block and add to conditional content
+                              let questionToMove: any = null;
+                              let sourceBlockId: string = "";
+                              
+                              // Find and remove the question
+                              const updatedBlocks = blocks.map(b => {
+                                const questionIndex = b.questions.findIndex(q => q.id === questionId);
+                                if (questionIndex !== -1) {
+                                  questionToMove = b.questions[questionIndex];
+                                  sourceBlockId = b.id;
+                                  return {
+                                    ...b,
+                                    questions: b.questions.filter(q => q.id !== questionId)
+                                  };
+                                }
+                                return b;
+                              });
+                              
+                              if (questionToMove) {
+                                // Store the moved question data
+                                setMovedQuestions(prev => [...prev, {
+                                  id: questionToMove.id,
+                                  blockId: sourceBlockId,
+                                  title: questionToMove.title,
+                                  type: questionToMove.type
+                                }]);
+                                
+                                setBlocks(updatedBlocks);
+                                
+                                // Add to conditional block's content
+                                const updatedConditionalData = { ...block.conditionalData };
+                                if (destination === "ifTrue") {
+                                  updatedConditionalData.ifTrue = {
+                                    ...updatedConditionalData.ifTrue,
+                                    existingQuestionIds: [...(updatedConditionalData.ifTrue?.existingQuestionIds || []), questionId]
+                                  };
+                                } else {
+                                  updatedConditionalData.ifFalse = {
+                                    ...updatedConditionalData.ifFalse,
+                                    existingQuestionIds: [...(updatedConditionalData.ifFalse?.existingQuestionIds || []), questionId]
+                                  };
+                                }
+                                updateBlock(block.id, { conditionalData: updatedConditionalData });
+                              }
+                            }}
+                            onRestoreBlock={(blockId) => {
+                              // Find the moved block and restore it to the main blocks array
+                              const blockToRestore = movedBlocks.find(b => b.id === blockId);
+                              if (blockToRestore) {
+                                // Add back to main blocks array
+                                setBlocks(prev => [...prev, blockToRestore as QuestionBlock]);
+                                
+                                // Remove from moved blocks
+                                setMovedBlocks(prev => prev.filter(b => b.id !== blockId));
+                                
+                                // Remove from conditional content
+                                const updatedConditionalData = { ...block.conditionalData };
+                                if (updatedConditionalData.ifTrue?.existingBlockIds?.includes(blockId)) {
+                                  updatedConditionalData.ifTrue = {
+                                    ...updatedConditionalData.ifTrue,
+                                    existingBlockIds: updatedConditionalData.ifTrue.existingBlockIds.filter((id: string) => id !== blockId)
+                                  };
+                                }
+                                if (updatedConditionalData.ifFalse?.existingBlockIds?.includes(blockId)) {
+                                  updatedConditionalData.ifFalse = {
+                                    ...updatedConditionalData.ifFalse,
+                                    existingBlockIds: updatedConditionalData.ifFalse.existingBlockIds.filter((id: string) => id !== blockId)
+                                  };
+                                }
+                                updateBlock(block.id, { conditionalData: updatedConditionalData });
+                              }
+                            }}
+                            onRestoreQuestion={(questionId) => {
+                              // Find the moved question and restore it to its original block
+                              const questionToRestore = movedQuestions.find(q => q.id === questionId);
+                              if (questionToRestore) {
+                                // Add back to the original block
+                                setBlocks(prev => prev.map(b => {
+                                  if (b.id === questionToRestore.blockId) {
+                                    return {
+                                      ...b,
+                                      questions: [...b.questions, {
+                                        id: questionToRestore.id,
+                                        title: questionToRestore.title,
+                                        type: questionToRestore.type as QuestionType,
+                                        description: "",
+                                        required: false,
+                                        enforceable: true,
+                                        legislationId: "",
+                                        articleNumber: "",
+                                        photosAllowed: false,
+                                        filesAllowed: false
+                                      }]
+                                    };
+                                  }
+                                  return b;
+                                }));
+                                
+                                // Remove from moved questions
+                                setMovedQuestions(prev => prev.filter(q => q.id !== questionId));
+                                
+                                // Remove from conditional content
+                                const updatedConditionalData = { ...block.conditionalData };
+                                if (updatedConditionalData.ifTrue?.existingQuestionIds?.includes(questionId)) {
+                                  updatedConditionalData.ifTrue = {
+                                    ...updatedConditionalData.ifTrue,
+                                    existingQuestionIds: updatedConditionalData.ifTrue.existingQuestionIds.filter((id: string) => id !== questionId)
+                                  };
+                                }
+                                if (updatedConditionalData.ifFalse?.existingQuestionIds?.includes(questionId)) {
+                                  updatedConditionalData.ifFalse = {
+                                    ...updatedConditionalData.ifFalse,
+                                    existingQuestionIds: updatedConditionalData.ifFalse.existingQuestionIds.filter((id: string) => id !== questionId)
+                                  };
+                                }
+                                updateBlock(block.id, { conditionalData: updatedConditionalData });
+                              }
+                            }}
+                            readOnly={previewMode}
+                          />
+                        </div>
+                      )}
+
+                      {/* Legacy conditional block questions - hidden for now */}
+                  {false && block.type === "conditional" && (
                         <>
                           {block.questions.map((question, questionIndex) => (
                         <div key={question.id} className={`border-l-4 border-gray-200 pl-4 space-y-4 transition-all duration-300 ease-in-out ${movedQuestionKey === `${block.id}-${question.id}` ? 'animate-swap' : ''}`}>
@@ -1156,13 +1387,13 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
                               >
                                 <ArrowDown className="h-4 w-4" />
                               </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => removeQuestion(block.id, questionIndex)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => removeQuestion(block.id, questionIndex)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
                             </div>
                           </div>
 
@@ -1232,23 +1463,23 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
                             </>
                           )}
 
-                          <div>
-                            <Label>Question Type</Label>
-                            <Select
-                              value={question.type}
-                              onValueChange={(value) => updateQuestion(block.id, questionIndex, { type: value as QuestionType })}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select question type" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {questionTypes.map((type) => (
-                                  <SelectItem key={type.value} value={type.value}>
-                                    {type.label}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                            <div>
+                              <Label>Question Type</Label>
+                              <Select
+                                value={question.type}
+                                onValueChange={(value) => updateQuestion(block.id, questionIndex, { type: value as QuestionType })}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select question type" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {questionTypes.map((type) => (
+                                    <SelectItem key={type.value} value={type.value}>
+                                      {type.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
                           </div>
 
                           <div>
@@ -1342,9 +1573,9 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
                         <div className="text-center py-4 text-muted-foreground border-2 border-dashed border-gray-200 rounded-lg">
                           No questions in this block yet. Click "Add Question" to get started.
                         </div>
-                          )}
-                        </>
                       )}
+                    </>
+                  )}
                         </div>
                       )}
                     </div>

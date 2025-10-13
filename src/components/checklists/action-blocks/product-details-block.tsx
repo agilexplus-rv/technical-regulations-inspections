@@ -185,7 +185,6 @@ export function ProductDetailsBlock({ questions, settings, onChange, readOnly = 
     { value: "boolean", label: "Yes/No" },
     { value: "single_choice", label: "Single Choice" },
     { value: "multi_choice", label: "Multiple Choice" },
-    { value: "photo", label: "Photo Upload" },
     { value: "number", label: "Number" },
     { value: "barcode", label: "Barcode" },
     { value: "ocr", label: "OCR/Text Recognition" },
