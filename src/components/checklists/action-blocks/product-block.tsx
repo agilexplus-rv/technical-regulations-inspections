@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Trash2, ArrowUp, ArrowDown } from "lucide-react";
 import { QuestionType, QuestionOption } from "@/types";
+import { DeleteConfirmationModal } from "@/components/ui/delete-confirmation-modal";
 
 interface ProductQuestion {
   id: string;

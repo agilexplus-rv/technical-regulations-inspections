@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Trash2, ArrowUp, ArrowDown } from "lucide-react";
 import { QuestionType, QuestionOption } from "@/types";
+import { DeleteConfirmationModal } from "@/components/ui/delete-confirmation-modal";
 
 interface CustomQuestion {
   id: string;
@@ -35,6 +36,12 @@ interface CustomBlockProps {
 export function CustomBlock({ questions, onChange, readOnly = false, legislations = [], validationErrors = {}, blockId = "" }: CustomBlockProps) {
   const [localQuestions, setLocalQuestions] = useState<CustomQuestion[]>(questions || []);
   const [movedQuestionId, setMovedQuestionId] = useState<string | null>(null);
+  
+  // Delete confirmation modal states
+  const [showDeleteQuestionModal, setShowDeleteQuestionModal] = useState(false);
+  const [questionToDelete, setQuestionToDelete] = useState<{ index: number; question: CustomQuestion } | null>(null);
+  const [showDeleteOptionModal, setShowDeleteOptionModal] = useState(false);
+  const [optionToDelete, setOptionToDelete] = useState<{ questionIndex: number; optionIndex: number; option: QuestionOption } | null>(null);
 
   const handleQuestionChange = (index: number, updates: Partial<CustomQuestion>) => {
     const updated = localQuestions.map((q, i) => (i === index ? { ...q, ...updates } : q));
@@ -57,9 +64,22 @@ export function CustomBlock({ questions, onChange, readOnly = false, legislation
   };
 
   const removeQuestion = (index: number) => {
+    if (localQuestions[index]) {
+      setQuestionToDelete({ index, question: localQuestions[index] });
+      setShowDeleteQuestionModal(true);
+    }
+  };
+
+  const confirmDeleteQuestion = () => {
+    if (!questionToDelete) return;
+    
+    const { index } = questionToDelete;
     const updated = localQuestions.filter((_, i) => i !== index);
     setLocalQuestions(updated);
     onChange?.(updated);
+    
+    setShowDeleteQuestionModal(false);
+    setQuestionToDelete(null);
   };
 
   const moveQuestionUp = (index: number) => {
@@ -114,10 +134,24 @@ export function CustomBlock({ questions, onChange, readOnly = false, legislation
 
   const removeOption = (questionIndex: number, optionIndex: number) => {
     const question = localQuestions[questionIndex];
+    if (question.options && question.options[optionIndex]) {
+      setOptionToDelete({ questionIndex, optionIndex, option: question.options[optionIndex] });
+      setShowDeleteOptionModal(true);
+    }
+  };
+
+  const confirmDeleteOption = () => {
+    if (!optionToDelete) return;
+    
+    const { questionIndex, optionIndex } = optionToDelete;
+    const question = localQuestions[questionIndex];
     if (question.options) {
       const updatedOptions = question.options.filter((_, i) => i !== optionIndex);
       handleQuestionChange(questionIndex, { options: updatedOptions });
     }
+    
+    setShowDeleteOptionModal(false);
+    setOptionToDelete(null);
   };
 
   const questionTypes: { value: QuestionType; label: string }[] = [
@@ -389,6 +423,31 @@ export function CustomBlock({ questions, onChange, readOnly = false, legislation
           )}
         </div>
       ))}
+
+      {/* Delete Confirmation Modals */}
+      <DeleteConfirmationModal
+        isOpen={showDeleteQuestionModal}
+        onClose={() => {
+          setShowDeleteQuestionModal(false);
+          setQuestionToDelete(null);
+        }}
+        onConfirm={confirmDeleteQuestion}
+        title="Delete Question"
+        description="This action cannot be undone."
+        itemName={questionToDelete?.question.title}
+      />
+
+      <DeleteConfirmationModal
+        isOpen={showDeleteOptionModal}
+        onClose={() => {
+          setShowDeleteOptionModal(false);
+          setOptionToDelete(null);
+        }}
+        onConfirm={confirmDeleteOption}
+        title="Delete Option"
+        description="This action cannot be undone."
+        itemName={optionToDelete?.option.label}
+      />
     </div>
   );
 }

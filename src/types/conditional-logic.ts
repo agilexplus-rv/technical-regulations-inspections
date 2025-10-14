@@ -40,13 +40,46 @@ export interface Condition {
   items: (LogicStatement | LogicGroup)[]; // Can contain statements or groups
 }
 
+// New action block structure for conditional content
+export interface NewActionBlock {
+  id: string;
+  type: "action";
+  actionBlockType: string;
+  title: string;
+  description: string;
+  questions: any[];
+  blockSettings?: any;
+}
+
+// New conditional block structure for conditional content
+export interface NewConditionalBlock {
+  id: string;
+  type: "conditional";
+  title: string;
+  description: string;
+  questions: any[];
+  conditionalData: ConditionalBlockData;
+}
+
+// New question structure for conditional content
+export interface NewQuestion {
+  id: string;
+  type: string;
+  title: string;
+  description: string;
+  required: boolean;
+  enforceable: boolean;
+  legislationId: string;
+  articleNumber: string;
+}
+
 // Conditional block content - what to execute if condition is true or false
 export interface ConditionalContent {
   // Can reference existing blocks/questions (by ID) or contain new ones
   existingBlockIds?: string[];
   existingQuestionIds?: string[];
-  newBlocks?: any[]; // New blocks to create if condition matches
-  newQuestions?: any[]; // New questions to create if condition matches
+  newBlocks?: (NewActionBlock | NewConditionalBlock)[]; // New blocks to create if condition matches
+  newQuestions?: NewQuestion[]; // New questions to create if condition matches
 }
 
 // Complete conditional block structure

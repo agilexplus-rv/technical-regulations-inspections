@@ -26,6 +26,9 @@ interface ConditionalBlockEditorProps {
   onMoveExistingQuestion?: (questionId: string, destination: "ifTrue" | "ifFalse") => void;
   onRestoreBlock?: (blockId: string) => void;
   onRestoreQuestion?: (questionId: string) => void;
+  legislations?: Array<{id: string, name: string}>;
+  validationErrors?: Record<string, { title?: string; legislationId?: string; articleNumber?: string }>;
+  isNested?: boolean; // Flag to indicate if this is already inside a conditional block
   readOnly?: boolean;
 }
 
@@ -41,6 +44,9 @@ export function ConditionalBlockEditor({
   onMoveExistingQuestion,
   onRestoreBlock,
   onRestoreQuestion,
+  legislations = [],
+  validationErrors = {},
+  isNested = false,
   readOnly = false
 }: ConditionalBlockEditorProps) {
   const [localBlockData, setLocalBlockData] = useState<ConditionalBlockData>(
@@ -161,6 +167,9 @@ export function ConditionalBlockEditor({
             onMoveExistingQuestion={(questionId) => onMoveExistingQuestion?.(questionId, "ifTrue")}
             onRestoreBlock={onRestoreBlock}
             onRestoreQuestion={onRestoreQuestion}
+            legislations={legislations}
+            validationErrors={validationErrors}
+            isNested={isNested}
             readOnly={readOnly}
           />
         </div>
@@ -194,6 +203,9 @@ export function ConditionalBlockEditor({
             onMoveExistingQuestion={(questionId) => onMoveExistingQuestion?.(questionId, "ifFalse")}
             onRestoreBlock={onRestoreBlock}
             onRestoreQuestion={onRestoreQuestion}
+            legislations={legislations}
+            validationErrors={validationErrors}
+            isNested={isNested}
             readOnly={readOnly}
           />
         </div>

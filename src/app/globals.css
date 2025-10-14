@@ -320,6 +320,10 @@
   animation: swap-highlight 0.5s ease-out;
 }
 
+.swap-highlight {
+  animation: swap-highlight 0.5s ease-out;
+}
+
 /* Custom utility classes for the inspection app */
 .inspection-status-draft {
   @apply bg-gray-100 text-gray-800 border-gray-200;

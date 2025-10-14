@@ -13,6 +13,7 @@ import { Checklist, ChecklistQuestion, QuestionType, ConditionalLogic, LegalRefe
 import { ActionBlockSelector, ActionBlockType } from "./action-blocks";
 import { ConditionalBlockEditor } from "./conditional/conditional-block-editor";
 import { AvailableQuestion } from "@/types/conditional-logic";
+import { DeleteConfirmationModal } from "@/components/ui/delete-confirmation-modal";
 
 interface ChecklistBuilderProps {
   checklist?: Checklist;
@@ -67,6 +68,15 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
   const [legislations, setLegislations] = useState<Array<{id: string, name: string}>>([]);
   const [movedBlocks, setMovedBlocks] = useState<Array<{ id: string; title: string; type: string; actionBlockType?: string; questions: any[] }>>([]);
   const [movedQuestions, setMovedQuestions] = useState<Array<{ id: string; blockId: string; title: string; type: string }>>([]);
+  
+  // Delete confirmation modal states
+  const [showDeleteBlockModal, setShowDeleteBlockModal] = useState(false);
+  const [blockToDelete, setBlockToDelete] = useState<QuestionBlock | null>(null);
+  const [showDeleteQuestionModal, setShowDeleteQuestionModal] = useState(false);
+  const [questionToDelete, setQuestionToDelete] = useState<{ blockId: string; questionIndex: number; question: QuestionFormData } | null>(null);
+  const [showDeleteOptionModal, setShowDeleteOptionModal] = useState(false);
+  const [optionToDelete, setOptionToDelete] = useState<{ blockId: string; questionIndex: number; optionIndex: number; option: QuestionOption } | null>(null);
+  
   const addButtonsRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -319,21 +329,41 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
 
   const removeBlock = (blockId: string) => {
     const blockToRemove = blocks.find(block => block.id === blockId);
+    if (blockToRemove) {
+      setBlockToDelete(blockToRemove);
+      setShowDeleteBlockModal(true);
+    }
+  };
+
+  const confirmDeleteBlock = () => {
+    if (!blockToDelete) return;
+    
+    const blockId = blockToDelete.id;
     
     // Prevent deletion of Product Details block if a Product block exists
-    if (blockToRemove?.type === "action" && blockToRemove?.actionBlockType === "product_details") {
+    if (blockToDelete.type === "action" && blockToDelete.actionBlockType === "product_details") {
       const hasProductBlock = blocks.some(block => 
         block.type === "action" && block.actionBlockType === "product" && block.id !== blockId
       );
       
       if (hasProductBlock) {
         setError("Cannot delete Product Details block while a Product block exists. Please delete the Product block first.");
+        setShowDeleteBlockModal(false);
+        setBlockToDelete(null);
         return;
       }
     }
     
     setBlocks(blocks.filter(block => block.id !== blockId));
+    setExpandedBlocks(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(blockId);
+      return newSet;
+    });
     setError(null); // Clear any previous errors
+    
+    setShowDeleteBlockModal(false);
+    setBlockToDelete(null);
   };
 
   const updateQuestion = (blockId: string, questionIndex: number, updatedQuestion: Partial<QuestionFormData>) => {
@@ -352,6 +382,18 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
   };
 
   const removeQuestion = (blockId: string, questionIndex: number) => {
+    const block = blocks.find(b => b.id === blockId);
+    if (block && block.questions[questionIndex]) {
+      setQuestionToDelete({ blockId, questionIndex, question: block.questions[questionIndex] });
+      setShowDeleteQuestionModal(true);
+    }
+  };
+
+  const confirmDeleteQuestion = () => {
+    if (!questionToDelete) return;
+    
+    const { blockId, questionIndex } = questionToDelete;
+    
     setBlocks(blocks.map(block => 
       block.id === blockId 
         ? {
@@ -360,6 +402,9 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
           }
         : block
     ));
+    
+    setShowDeleteQuestionModal(false);
+    setQuestionToDelete(null);
   };
 
   const updateBlock = (blockId: string, updatedBlock: Partial<QuestionBlock>) => {
@@ -490,11 +535,27 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
   const removeOption = (blockId: string, questionIndex: number, optionIndex: number) => {
     const block = blocks.find(b => b.id === blockId);
     const question = block?.questions[questionIndex];
+    if (question?.options && question.options[optionIndex]) {
+      setOptionToDelete({ blockId, questionIndex, optionIndex, option: question.options[optionIndex] });
+      setShowDeleteOptionModal(true);
+    }
+  };
+
+  const confirmDeleteOption = () => {
+    if (!optionToDelete) return;
+    
+    const { blockId, questionIndex, optionIndex } = optionToDelete;
+    
+    const block = blocks.find(b => b.id === blockId);
+    const question = block?.questions[questionIndex];
     if (question?.options) {
       const updatedOptions = [...question.options];
       updatedOptions.splice(optionIndex, 1);
       updateQuestion(blockId, questionIndex, { options: updatedOptions });
     }
+    
+    setShowDeleteOptionModal(false);
+    setOptionToDelete(null);
   };
 
   const handleSave = async () => {
@@ -1004,7 +1065,7 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
                           )}
                           <div className="flex items-start gap-2">
                             <Folder className="h-5 w-5 text-blue-600 mt-0.5" />
-                            <div className="flex-1">
+                          <div className="flex-1">
                             <h4 className="font-medium flex items-center gap-2">
                                 <span className="text-gray-600">Block {blockIndex + 1}:</span>
                               {block.title}
@@ -1022,8 +1083,8 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
                               )}
                             </h4>
                             <p className="text-sm text-muted-foreground">{block.description}</p>
-                               {!expandedBlocks.has(block.id) && (
-                                 <div className="text-xs text-gray-500 mt-2">
+                            {!expandedBlocks.has(block.id) && (
+                              <div className="text-xs text-gray-500 mt-2">
                                 {block.questions.length} question{block.questions.length !== 1 ? 's' : ''}
                                 {block.type === "action" && block.actionBlockType === "product_details" && block.blockSettings && (
                                   <span>
@@ -1031,8 +1092,14 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
                                     <span> • Files: {block.blockSettings.filesAllowed ? 'Allowed' : 'Not allowed'}</span>
                                   </span>
                                 )}
-                                </div>
-                              )}
+                                {block.type === "conditional" && block.conditionalData && (
+                                  <span>
+                                    <span> • {((block.conditionalData.ifTrue?.existingBlockIds?.length || 0) + (block.conditionalData.ifTrue?.newBlocks?.length || 0))} block{((block.conditionalData.ifTrue?.existingBlockIds?.length || 0) + (block.conditionalData.ifTrue?.newBlocks?.length || 0)) !== 1 ? 's' : ''} in If True</span>
+                                    <span> • {((block.conditionalData.ifFalse?.existingBlockIds?.length || 0) + (block.conditionalData.ifFalse?.newBlocks?.length || 0))} block{((block.conditionalData.ifFalse?.existingBlockIds?.length || 0) + (block.conditionalData.ifFalse?.newBlocks?.length || 0)) !== 1 ? 's' : ''} in If False</span>
+                                  </span>
+                                )}
+                              </div>
+                            )}
                             </div>
                           </div>
                         </div>
@@ -1208,6 +1275,8 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
                             movedBlocks={movedBlocks}
                             movedQuestions={movedQuestions}
                             currentBlockId={block.id}
+                            legislations={legislations}
+                            validationErrors={validationErrors.questions || {}}
                             onChange={(conditionalData) => {
                               updateBlock(block.id, { conditionalData });
                             }}
@@ -1729,6 +1798,43 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
 
         </CardContent>
       </Card>
+
+      {/* Delete Confirmation Modals */}
+      <DeleteConfirmationModal
+        isOpen={showDeleteBlockModal}
+        onClose={() => {
+          setShowDeleteBlockModal(false);
+          setBlockToDelete(null);
+        }}
+        onConfirm={confirmDeleteBlock}
+        title="Delete Block"
+        description="This action cannot be undone."
+        itemName={blockToDelete?.title}
+      />
+
+      <DeleteConfirmationModal
+        isOpen={showDeleteQuestionModal}
+        onClose={() => {
+          setShowDeleteQuestionModal(false);
+          setQuestionToDelete(null);
+        }}
+        onConfirm={confirmDeleteQuestion}
+        title="Delete Question"
+        description="This action cannot be undone."
+        itemName={questionToDelete?.question.title}
+      />
+
+      <DeleteConfirmationModal
+        isOpen={showDeleteOptionModal}
+        onClose={() => {
+          setShowDeleteOptionModal(false);
+          setOptionToDelete(null);
+        }}
+        onConfirm={confirmDeleteOption}
+        title="Delete Option"
+        description="This action cannot be undone."
+        itemName={optionToDelete?.option.label}
+      />
     </div>
   );
 }
