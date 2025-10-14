@@ -40,8 +40,8 @@ interface ConditionalContentProps {
   label: "If True" | "If False";
   availableBlocks: Array<{ id: string; title: string; type: string; actionBlockType?: string }>;
   availableQuestions: Array<{ id: string; blockId: string; title: string; type: string }>;
-  movedBlocks?: Array<{ id: string; title: string; type: string; actionBlockType?: string; questions: unknown[] }>;
-  movedQuestions?: Array<{ id: string; blockId: string; title: string; type: string }>;
+  movedBlocks?: Array<{ id: string; title: string; type: string; actionBlockType?: string; questions: unknown[]; blockSettings?: any }>;
+  movedQuestions?: Array<any>;
   onChange?: (content: ConditionalContentType) => void;
   onMoveExistingBlock?: (blockId: string, destination: "ifTrue" | "ifFalse") => void;
   onMoveExistingQuestion?: (questionId: string, destination: "ifTrue" | "ifFalse") => void;
@@ -97,6 +97,8 @@ export function ConditionalContent({
   // Move animation states
   const [movedNewBlockId, setMovedNewBlockId] = useState<string | null>(null);
   const [movedNewQuestionId, setMovedNewQuestionId] = useState<string | null>(null);
+  const [movedExistingBlockId, setMovedExistingBlockId] = useState<string | null>(null);
+  const [movedExistingQuestionId, setMovedExistingQuestionId] = useState<string | null>(null);
 
   const toggleBlockExpansion = (blockId: string) => {
     setExpandedBlocks(prev => {
@@ -119,7 +121,16 @@ export function ConditionalContent({
   const addExistingBlock = (blockId: string) => {
     const existingBlockIds = [...(localContent.existingBlockIds || []), blockId];
     handleContentChange({ existingBlockIds });
-    onMoveExistingBlock?.(blockId);
+    const destination = label === "If True" ? "ifTrue" : "ifFalse";
+    onMoveExistingBlock?.(blockId, destination);
+    
+    // Expand the newly added block
+    setExpandedBlocks(prev => {
+      const newSet = new Set(prev);
+      newSet.add(blockId);
+      return newSet;
+    });
+    
     setShowAddMenu(false);
     setSelectedItemType("");
   };
@@ -127,7 +138,16 @@ export function ConditionalContent({
   const addExistingQuestion = (questionId: string) => {
     const existingQuestionIds = [...(localContent.existingQuestionIds || []), questionId];
     handleContentChange({ existingQuestionIds });
-    onMoveExistingQuestion?.(questionId);
+    const destination = label === "If True" ? "ifTrue" : "ifFalse";
+    onMoveExistingQuestion?.(questionId, destination);
+    
+    // Expand the newly added question
+    setExpandedBlocks(prev => {
+      const newSet = new Set(prev);
+      newSet.add(questionId);
+      return newSet;
+    });
+    
     setShowAddMenu(false);
     setSelectedItemType("");
   };
@@ -205,7 +225,7 @@ export function ConditionalContent({
     // Create the Product block
     const productBlock = {
       id: productBlockId,
-      type: "action",
+      type: "action" as const,
       actionBlockType: "product" as ActionBlockType,
       title: "Action Block",
       description: "",
@@ -234,7 +254,7 @@ export function ConditionalContent({
     const newBlockId = `new_block_${Date.now()}`;
     const newBlocks = [...(localContent.newBlocks || []), {
       id: newBlockId,
-      type: "conditional",
+      type: "conditional" as const,
       title: "Conditional Block",
       description: "",
       questions: [],
@@ -317,6 +337,13 @@ export function ConditionalContent({
     handleContentChange({ existingBlockIds });
     onRestoreBlock?.(existingBlockToDelete);
     
+    // Remove from expanded blocks
+    setExpandedBlocks(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(existingBlockToDelete);
+      return newSet;
+    });
+    
     setShowDeleteExistingBlockModal(false);
     setExistingBlockToDelete(null);
   };
@@ -332,6 +359,13 @@ export function ConditionalContent({
     const existingQuestionIds = (localContent.existingQuestionIds || []).filter(id => id !== existingQuestionToDelete);
     handleContentChange({ existingQuestionIds });
     onRestoreQuestion?.(existingQuestionToDelete);
+    
+    // Remove from expanded blocks
+    setExpandedBlocks(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(existingQuestionToDelete);
+      return newSet;
+    });
     
     setShowDeleteExistingQuestionModal(false);
     setExistingQuestionToDelete(null);
@@ -471,6 +505,84 @@ export function ConditionalContent({
     handleContentChange({ newQuestions: updatedQuestions });
     setMovedNewQuestionId(question.id);
     setTimeout(() => setMovedNewQuestionId(null), 500);
+  };
+
+  // Move functions for existing blocks
+  const moveExistingBlockUp = (blockIndex: number) => {
+    const existingBlockIds = localContent.existingBlockIds || [];
+    if (blockIndex === 0) return;
+    
+    const blockId = existingBlockIds[blockIndex];
+    const block = movedBlocks.find(b => b.id === blockId);
+    const blockAbove = movedBlocks.find(b => b.id === existingBlockIds[blockIndex - 1]);
+    
+    if (!block) return;
+    
+    // Prevent moving Product block before Product Details block
+    if (block.type === "action" && block.actionBlockType === "product" &&
+        blockAbove?.type === "action" && blockAbove?.actionBlockType === "product_details") {
+      return;
+    }
+    
+    const updatedIds = [...existingBlockIds];
+    [updatedIds[blockIndex - 1], updatedIds[blockIndex]] = [updatedIds[blockIndex], updatedIds[blockIndex - 1]];
+    
+    handleContentChange({ existingBlockIds: updatedIds });
+    setMovedExistingBlockId(blockId);
+    setTimeout(() => setMovedExistingBlockId(null), 500);
+  };
+
+  const moveExistingBlockDown = (blockIndex: number) => {
+    const existingBlockIds = localContent.existingBlockIds || [];
+    if (blockIndex === existingBlockIds.length - 1) return;
+    
+    const blockId = existingBlockIds[blockIndex];
+    const block = movedBlocks.find(b => b.id === blockId);
+    const blockBelow = movedBlocks.find(b => b.id === existingBlockIds[blockIndex + 1]);
+    
+    if (!block) return;
+    
+    // Prevent moving Product Details block after Product block
+    if (block.type === "action" && block.actionBlockType === "product_details" &&
+        blockBelow?.type === "action" && blockBelow?.actionBlockType === "product") {
+      return;
+    }
+    
+    const updatedIds = [...existingBlockIds];
+    [updatedIds[blockIndex], updatedIds[blockIndex + 1]] = [updatedIds[blockIndex + 1], updatedIds[blockIndex]];
+    
+    handleContentChange({ existingBlockIds: updatedIds });
+    setMovedExistingBlockId(blockId);
+    setTimeout(() => setMovedExistingBlockId(null), 500);
+  };
+
+  // Move functions for existing questions
+  const moveExistingQuestionUp = (questionIndex: number) => {
+    const existingQuestionIds = localContent.existingQuestionIds || [];
+    if (questionIndex === 0) return;
+    
+    const questionId = existingQuestionIds[questionIndex];
+    
+    const updatedIds = [...existingQuestionIds];
+    [updatedIds[questionIndex - 1], updatedIds[questionIndex]] = [updatedIds[questionIndex], updatedIds[questionIndex - 1]];
+    
+    handleContentChange({ existingQuestionIds: updatedIds });
+    setMovedExistingQuestionId(questionId);
+    setTimeout(() => setMovedExistingQuestionId(null), 500);
+  };
+
+  const moveExistingQuestionDown = (questionIndex: number) => {
+    const existingQuestionIds = localContent.existingQuestionIds || [];
+    if (questionIndex === existingQuestionIds.length - 1) return;
+    
+    const questionId = existingQuestionIds[questionIndex];
+    
+    const updatedIds = [...existingQuestionIds];
+    [updatedIds[questionIndex], updatedIds[questionIndex + 1]] = [updatedIds[questionIndex + 1], updatedIds[questionIndex]];
+    
+    handleContentChange({ existingQuestionIds: updatedIds });
+    setMovedExistingQuestionId(questionId);
+    setTimeout(() => setMovedExistingQuestionId(null), 500);
   };
 
   const updateNewQuestion = (questionId: string, updates: Partial<unknown>) => {
@@ -741,62 +853,6 @@ export function ConditionalContent({
 
         {/* Display content items */}
         <div className="space-y-2">
-          {/* Existing Blocks */}
-          {localContent.existingBlockIds?.map((blockId) => {
-            const block = movedBlocks.find(b => b.id === blockId);
-            if (!block) return null;
-            
-            return (
-              <div key={blockId} className="flex items-center justify-between p-2 bg-white rounded border">
-                <div className="flex items-center gap-2">
-                  <Folder className="h-4 w-4 text-blue-600" />
-                  <span className="text-sm">{block.title}</span>
-                  <Badge variant="outline" className="text-xs">
-                    {block.type} {block.actionBlockType && `(${block.actionBlockType})`}
-                  </Badge>
-                  <MoveRight className="h-3 w-3 text-gray-400" />
-                </div>
-                {!readOnly && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => removeExistingBlock(blockId)}
-                    title="Restore block to main list"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
-            );
-          })}
-
-          {/* Existing Questions */}
-          {localContent.existingQuestionIds?.map((questionId) => {
-            const question = movedQuestions.find(q => q.id === questionId);
-            if (!question) return null;
-            
-            return (
-              <div key={questionId} className="flex items-center justify-between p-2 bg-white rounded border">
-                <div className="flex items-center gap-2">
-                  <HelpCircle className="h-4 w-4 text-green-600" />
-                  <span className="text-sm">{question.title}</span>
-                  <Badge variant="outline" className="text-xs">{question.type}</Badge>
-                  <MoveRight className="h-3 w-3 text-gray-400" />
-                </div>
-                {!readOnly && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => removeExistingQuestion(questionId)}
-                    title="Restore question to original block"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
-            );
-          })}
-
           {/* New Blocks */}
           {localContent.newBlocks?.map((block, blockIndex) => {
             const isExpanded = expandedBlocks.has(block.id);
@@ -1036,7 +1092,166 @@ export function ConditionalContent({
               </div>
             );
           })}
+          {/* Existing Blocks */}
+          {localContent.existingBlockIds?.map((blockId, blockIndex) => {
+            const block = movedBlocks.find(b => b.id === blockId);
+            if (!block) return null;
+            
+            const isExpanded = expandedBlocks.has(blockId);
+            const existingBlockIds = localContent.existingBlockIds || [];
+            
+            return (
+              <div 
+                key={blockId} 
+                className={`bg-white rounded-lg border border-solid border-purple-400 p-4 ${movedExistingBlockId === blockId ? 'swap-highlight' : ''}`}
+              >
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div 
+                      className="flex items-center gap-2 cursor-pointer flex-1"
+                      onClick={() => toggleBlockExpansion(blockId)}
+                    >
+                      {isExpanded ? (
+                        <ChevronDown className="h-4 w-4 text-gray-500" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4 text-gray-500" />
+                      )}
+                      <div className="flex items-start gap-2">
+                        <Folder className="h-5 w-5 text-purple-600 mt-0.5" />
+                        <div className="flex-1">
+                          <h4 className="font-medium flex items-center gap-2">
+                            <span className="text-gray-600">Block {blockIndex + 1}:</span>
+                            {block.title}
+                            <span className={`text-xs px-2 py-1 rounded ${
+                              block.type === "action" 
+                                ? "bg-green-100 text-green-800" 
+                                : "bg-blue-100 text-blue-800"
+                            }`}>
+                              {block.type === "action" ? "Action" : "Conditional"}
+                            </span>
+                            {block.type === "action" && block.actionBlockType && (
+                              <span className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-700 capitalize">
+                                {block.actionBlockType.replace(/_/g, " ")}
+                              </span>
+                            )}
+                            <Badge variant="outline" className="text-xs bg-purple-100 text-purple-800">
+                              From Main List
+                            </Badge>
+                          </h4>
+                          {!isExpanded && (
+                            <div className="text-xs text-gray-500 mt-2">
+                              {block.questions?.length || 0} question{(block.questions?.length || 0) !== 1 ? 's' : ''}
+                              {block.type === "action" && block.actionBlockType === "product_details" && block.blockSettings && (
+                                <span>
+                                  <span> • Photos: {block.blockSettings.photosAllowed ? 'Allowed' : 'Not allowed'}</span>
+                                  <span> • Files: {block.blockSettings.filesAllowed ? 'Allowed' : 'Not allowed'}</span>
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    {!readOnly && (
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => moveExistingBlockUp(blockIndex)}
+                          disabled={
+                            blockIndex === 0 ||
+                            (block.type === "action" && block.actionBlockType === "product" &&
+                             blockIndex > 0 && movedBlocks.find(b => b.id === existingBlockIds[blockIndex - 1])?.type === "action" && 
+                             movedBlocks.find(b => b.id === existingBlockIds[blockIndex - 1])?.actionBlockType === "product_details")
+                          }
+                          title={
+                            blockIndex === 0 
+                              ? "Already at the top"
+                              : (block.type === "action" && block.actionBlockType === "product" &&
+                                 blockIndex > 0 && movedBlocks.find(b => b.id === existingBlockIds[blockIndex - 1])?.type === "action" && 
+                                 movedBlocks.find(b => b.id === existingBlockIds[blockIndex - 1])?.actionBlockType === "product_details")
+                                ? "Product block cannot be moved before Product Details block"
+                                : "Move block up"
+                          }
+                        >
+                          <ArrowUp className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => moveExistingBlockDown(blockIndex)}
+                          disabled={
+                            blockIndex === existingBlockIds.length - 1 ||
+                            (block.type === "action" && block.actionBlockType === "product_details" &&
+                             blockIndex < existingBlockIds.length - 1 && movedBlocks.find(b => b.id === existingBlockIds[blockIndex + 1])?.type === "action" && 
+                             movedBlocks.find(b => b.id === existingBlockIds[blockIndex + 1])?.actionBlockType === "product")
+                          }
+                          title={
+                            blockIndex === existingBlockIds.length - 1
+                              ? "Already at the bottom"
+                              : (block.type === "action" && block.actionBlockType === "product_details" &&
+                                 blockIndex < existingBlockIds.length - 1 && movedBlocks.find(b => b.id === existingBlockIds[blockIndex + 1])?.type === "action" && 
+                                 movedBlocks.find(b => b.id === existingBlockIds[blockIndex + 1])?.actionBlockType === "product")
+                                ? "Product Details block cannot be moved after Product block"
+                                : "Move block down"
+                          }
+                        >
+                          <ArrowDown className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => removeExistingBlock(blockId)}
+                          title="Restore block to main checklist"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
 
+                  {isExpanded && (
+                    <div className="space-y-3 mt-4">
+                      {/* Display questions from the moved block */}
+                      {block.questions && block.questions.length > 0 ? (
+                        <div className="space-y-2">
+                          <p className="text-sm font-medium text-gray-700">Questions in this block:</p>
+                          {block.questions.map((question: any, qIndex: number) => (
+                            <div key={question.id} className="p-3 bg-gray-50 rounded border border-gray-200">
+                              <div className="flex items-start justify-between">
+                                <div className="flex-1">
+                                  <p className="font-medium text-sm">
+                                    {qIndex + 1}. {question.title}
+                                  </p>
+                                  {question.description && (
+                                    <p className="text-xs text-muted-foreground mt-1">{question.description}</p>
+                                  )}
+                                  <div className="flex gap-2 mt-2 flex-wrap">
+                                    <Badge variant="outline" className="text-xs">{question.type}</Badge>
+                                    {question.required && <Badge variant="outline" className="text-xs bg-orange-50">Required</Badge>}
+                                    {question.enforceable !== false && <Badge variant="outline" className="text-xs bg-red-50">Enforceable</Badge>}
+                                    {question.photosAllowed && <Badge variant="outline" className="text-xs bg-blue-50">Photos</Badge>}
+                                    {question.filesAllowed && <Badge variant="outline" className="text-xs bg-green-50">Files</Badge>}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">No questions in this block</p>
+                      )}
+                      
+                      <div className="bg-purple-50 border border-purple-200 text-purple-800 px-3 py-2 rounded-md text-sm">
+                        <p className="font-medium">This block was moved from the main checklist</p>
+                        <p className="text-xs mt-1">Click the delete button to restore it to its original position</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
           {/* New Questions */}
           {localContent.newQuestions?.map((question, questionIndex) => {
             const isExpanded = expandedBlocks.has(question.id);
@@ -1256,6 +1471,148 @@ export function ConditionalContent({
               </div>
             );
           })}
+          {/* Existing Questions */}
+          {localContent.existingQuestionIds?.map((questionId, questionIndex) => {
+            const question = movedQuestions.find(q => q.id === questionId);
+            if (!question) return null;
+            
+            const isExpanded = expandedBlocks.has(questionId);
+            const existingQuestionIds = localContent.existingQuestionIds || [];
+            
+            return (
+              <div 
+                key={questionId} 
+                className={`bg-white rounded-lg border border-solid border-purple-400 p-4 ${movedExistingQuestionId === questionId ? 'swap-highlight' : ''}`}
+              >
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div 
+                      className="flex items-center gap-2 cursor-pointer flex-1"
+                      onClick={() => toggleBlockExpansion(questionId)}
+                    >
+                      {isExpanded ? (
+                        <ChevronDown className="h-4 w-4 text-gray-500" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4 text-gray-500" />
+                      )}
+                      <div className="flex items-start gap-2">
+                        <FileQuestion className="h-5 w-5 text-purple-600 mt-0.5" />
+                        <div className="flex-1">
+                          <h4 className="font-medium flex items-center gap-2">
+                            <span className="text-gray-600">Question {questionIndex + 1}:</span>
+                            {question.title}
+                            <Badge variant="outline" className="text-xs bg-purple-100 text-purple-800">
+                              From Main List
+                            </Badge>
+                          </h4>
+                          {!isExpanded && (
+                            <div className="text-xs text-gray-500 mt-2">
+                              Type: {question.type?.replace(/_/g, " ") || "Not set"}
+                              {question.required && <span> • Required</span>}
+                              {question.enforceable !== false && <span> • Enforceable</span>}
+                              {question.photosAllowed && <span> • Photos: Allowed</span>}
+                              {question.filesAllowed && <span> • Files: Allowed</span>}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    {!readOnly && (
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => moveExistingQuestionUp(questionIndex)}
+                          disabled={questionIndex === 0}
+                          title={questionIndex === 0 ? "Already at the top" : "Move question up"}
+                        >
+                          <ArrowUp className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => moveExistingQuestionDown(questionIndex)}
+                          disabled={questionIndex === existingQuestionIds.length - 1}
+                          title={questionIndex === existingQuestionIds.length - 1 ? "Already at the bottom" : "Move question down"}
+                        >
+                          <ArrowDown className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => removeExistingQuestion(questionId)}
+                          title="Restore question to original block"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+
+                  {isExpanded && (
+                    <div className="space-y-3 mt-4">
+                      {/* Question Details */}
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-2 gap-3 text-sm">
+                          <div>
+                            <span className="font-medium text-gray-700">Type:</span>
+                            <span className="ml-2 text-gray-600 capitalize">{question.type?.replace(/_/g, " ")}</span>
+                          </div>
+                          {question.description && (
+                            <div className="col-span-2">
+                              <span className="font-medium text-gray-700">Description:</span>
+                              <p className="text-gray-600 mt-1">{question.description}</p>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex gap-2 flex-wrap">
+                          {question.required && <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700">Required</Badge>}
+                          {question.enforceable !== false && <Badge variant="outline" className="text-xs bg-red-50 text-red-700">Enforceable</Badge>}
+                          {question.photosAllowed && <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700">Photos Allowed</Badge>}
+                          {question.filesAllowed && <Badge variant="outline" className="text-xs bg-green-50 text-green-700">Files Allowed</Badge>}
+                        </div>
+
+                        {question.options && question.options.length > 0 && (
+                          <div>
+                            <p className="text-sm font-medium text-gray-700 mb-2">Options:</p>
+                            <div className="space-y-1">
+                              {question.options.map((option: any, idx: number) => (
+                                <div key={idx} className="text-sm text-gray-600 pl-3">
+                                  • {option.label}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {question.enforceable !== false && question.legislationId && (
+                          <div className="text-sm">
+                            <span className="font-medium text-gray-700">Legislation:</span>
+                            <span className="ml-2 text-gray-600">
+                              {legislations.find(l => l.id === question.legislationId)?.name || question.legislationId}
+                            </span>
+                            {question.articleNumber && (
+                              <>
+                                <span className="ml-3 font-medium text-gray-700">Article:</span>
+                                <span className="ml-2 text-gray-600">{question.articleNumber}</span>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      
+                      <div className="bg-purple-50 border border-purple-200 text-purple-800 px-3 py-2 rounded-md text-sm">
+                        <p className="font-medium">This question was moved from the main checklist</p>
+                        <p className="text-xs mt-1">Click the delete button to restore it to its original block</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+
 
           {totalItems === 0 && (
             <div className="text-center py-6 text-muted-foreground border-2 border-dashed border-gray-300 rounded-lg">

@@ -71,6 +71,11 @@ export interface NewQuestion {
   enforceable: boolean;
   legislationId: string;
   articleNumber: string;
+  photosAllowed?: boolean;
+  filesAllowed?: boolean;
+  options?: any[];
+  validation?: any;
+  legalRefs?: any[];
 }
 
 // Conditional block content - what to execute if condition is true or false

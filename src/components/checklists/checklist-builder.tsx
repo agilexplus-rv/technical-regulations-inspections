@@ -66,8 +66,8 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
   const [showFloatingButtons, setShowFloatingButtons] = useState(false);
   const [expandedBlocks, setExpandedBlocks] = useState<Set<string>>(new Set());
   const [legislations, setLegislations] = useState<Array<{id: string, name: string}>>([]);
-  const [movedBlocks, setMovedBlocks] = useState<Array<{ id: string; title: string; type: string; actionBlockType?: string; questions: any[] }>>([]);
-  const [movedQuestions, setMovedQuestions] = useState<Array<{ id: string; blockId: string; title: string; type: string }>>([]);
+  const [movedBlocks, setMovedBlocks] = useState<Array<{ id: string; title: string; type: string; actionBlockType?: string; questions: any[]; blockSettings?: any }>>([]);
+  const [movedQuestions, setMovedQuestions] = useState<Array<QuestionFormData & { blockId: string }>>([]);
   
   // Delete confirmation modal states
   const [showDeleteBlockModal, setShowDeleteBlockModal] = useState(false);
@@ -413,6 +413,128 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
     ));
   };
 
+  // Helper function to extract all question IDs referenced in a conditional block's condition
+  const getReferencedQuestionIds = (conditionalData: any): string[] => {
+    if (!conditionalData?.condition) return [];
+    
+    const questionIds: string[] = [];
+    
+    const extractFromCondition = (condition: any) => {
+      if (!condition) return;
+      
+      // Handle LogicStatement
+      if (condition.questionId) {
+        questionIds.push(condition.questionId);
+      }
+      
+      // Handle LogicGroup
+      if (condition.statements) {
+        condition.statements.forEach((stmt: any) => extractFromCondition(stmt));
+      }
+      
+      if (condition.groups) {
+        condition.groups.forEach((group: any) => extractFromCondition(group));
+      }
+      
+      // Handle NOT wrapper  
+      if (condition.not && condition.condition) {
+        extractFromCondition(condition.condition);
+      }
+    };
+    
+    extractFromCondition(conditionalData.condition);
+    return questionIds;
+  };
+
+  // Helper function to check if a conditional block can move up
+  const canConditionalBlockMoveUp = (blockIndex: number): { canMove: boolean; reason?: string } => {
+    const block = blocks[blockIndex];
+    
+    if (block.type !== "conditional" || !block.conditionalData) {
+      return { canMove: true };
+    }
+    
+    if (blockIndex === 1) {
+      return { canMove: false, reason: "Conditional blocks cannot be placed first" };
+    }
+    
+    const referencedQuestionIds = getReferencedQuestionIds(block.conditionalData);
+    const blocksAbove = blocks.slice(0, blockIndex - 1);
+    const allQuestionsAbove = blocksAbove.flatMap(b => b.questions.map(q => q.id));
+    
+    const hasReferencedQuestionsBelow = referencedQuestionIds.some(qId => !allQuestionsAbove.includes(qId));
+    
+    if (hasReferencedQuestionsBelow) {
+      return { canMove: false, reason: "References questions from blocks below" };
+    }
+    
+    return { canMove: true };
+  };
+
+  // Helper function to find the index of the first Product Details block (including in conditionals)
+  const findFirstProductDetailsIndex = (): number => {
+    for (let i = 0; i < blocks.length; i++) {
+      const block = blocks[i];
+      
+      // Check if it's a direct Product Details block
+      if (block.type === "action" && block.actionBlockType === "product_details") {
+        return i;
+      }
+      
+      // Check if it's a conditional block containing Product Details
+      if (block.type === "conditional" && block.conditionalData) {
+        const hasProductDetails = 
+          block.conditionalData.ifTrue?.newBlocks?.some((b: any) => b.type === "action" && b.actionBlockType === "product_details") ||
+          block.conditionalData.ifFalse?.newBlocks?.some((b: any) => b.type === "action" && b.actionBlockType === "product_details") ||
+          block.conditionalData.ifTrue?.existingBlockIds?.some((id: string) => {
+            const movedBlock = movedBlocks.find(mb => mb.id === id);
+            return movedBlock?.type === "action" && movedBlock?.actionBlockType === "product_details";
+          }) ||
+          block.conditionalData.ifFalse?.existingBlockIds?.some((id: string) => {
+            const movedBlock = movedBlocks.find(mb => mb.id === id);
+            return movedBlock?.type === "action" && movedBlock?.actionBlockType === "product_details";
+          });
+        
+        if (hasProductDetails) {
+          return i;
+        }
+      }
+    }
+    return -1; // Not found
+  };
+
+  // Helper function to find the index of the first Product block (including in conditionals)
+  const findFirstProductIndex = (): number => {
+    for (let i = 0; i < blocks.length; i++) {
+      const block = blocks[i];
+      
+      // Check if it's a direct Product block
+      if (block.type === "action" && block.actionBlockType === "product") {
+        return i;
+      }
+      
+      // Check if it's a conditional block containing Product
+      if (block.type === "conditional" && block.conditionalData) {
+        const hasProduct = 
+          block.conditionalData.ifTrue?.newBlocks?.some((b: any) => b.type === "action" && b.actionBlockType === "product") ||
+          block.conditionalData.ifFalse?.newBlocks?.some((b: any) => b.type === "action" && b.actionBlockType === "product") ||
+          block.conditionalData.ifTrue?.existingBlockIds?.some((id: string) => {
+            const movedBlock = movedBlocks.find(mb => mb.id === id);
+            return movedBlock?.type === "action" && movedBlock?.actionBlockType === "product";
+          }) ||
+          block.conditionalData.ifFalse?.existingBlockIds?.some((id: string) => {
+            const movedBlock = movedBlocks.find(mb => mb.id === id);
+            return movedBlock?.type === "action" && movedBlock?.actionBlockType === "product";
+          });
+        
+        if (hasProduct) {
+          return i;
+        }
+      }
+    }
+    return -1; // Not found
+  };
+
   const moveBlockUp = (blockIndex: number) => {
     if (blockIndex === 0) return; // Already at the top
     
@@ -426,6 +548,25 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
         scrollContainerRef.current.scrollTop = 0;
       }
       return;
+    }
+    
+    // Prevent moving conditional block above blocks containing referenced questions
+    if (block.type === "conditional" && block.conditionalData) {
+      const referencedQuestionIds = getReferencedQuestionIds(block.conditionalData);
+      
+      // Check if any referenced questions are in blocks that would end up below this conditional block
+      const blocksAbove = blocks.slice(0, blockIndex - 1); // Blocks that will still be above after the move
+      const allQuestionsAbove = blocksAbove.flatMap(b => b.questions.map(q => q.id));
+      
+      const hasReferencedQuestionsBelow = referencedQuestionIds.some(qId => !allQuestionsAbove.includes(qId));
+      
+      if (hasReferencedQuestionsBelow) {
+        setError("This conditional block references questions from blocks below. Move those blocks up first, or move this conditional block down.");
+        if (scrollContainerRef.current) {
+          scrollContainerRef.current.scrollTop = 0;
+        }
+        return;
+      }
     }
     
     // Prevent moving Product block before Product Details block
@@ -603,17 +744,13 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
       return;
     }
 
-    // Validate Product Details block comes before Product block
+    // Validate Product Details block comes before Product block (including cross-conditional)
     if (hasProductBlock && hasProductDetailsBlock) {
-      const productDetailsIndex = blocks.findIndex(b => 
-        b.type === "action" && b.actionBlockType === "product_details"
-      );
-      const productIndex = blocks.findIndex(b => 
-        b.type === "action" && b.actionBlockType === "product"
-      );
+      const productDetailsIndex = findFirstProductDetailsIndex();
+      const productIndex = findFirstProductIndex();
       
-      if (productDetailsIndex > productIndex) {
-        setError("Product Details block must appear before the Product block. Please reorder your blocks.");
+      if (productDetailsIndex !== -1 && productIndex !== -1 && productDetailsIndex > productIndex) {
+        setError("Product Details block must appear before the Product block (including blocks inside conditional sections). Please reorder your blocks.");
         // Scroll to top to show error message
         if (scrollContainerRef.current) {
           scrollContainerRef.current.scrollTop = 0;
@@ -1026,9 +1163,9 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
                   const hasProduct = blocks.some(block => block.type === "action" && block.actionBlockType === "product");
                   const hasProductDetails = blocks.some(block => block.type === "action" && block.actionBlockType === "product_details");
                   if (hasProduct && hasProductDetails) {
-                    const productDetailsIndex = blocks.findIndex(b => b.type === "action" && b.actionBlockType === "product_details");
-                    const productIndex = blocks.findIndex(b => b.type === "action" && b.actionBlockType === "product");
-                    if (productDetailsIndex > productIndex) {
+                    const productDetailsIndex = findFirstProductDetailsIndex();
+                    const productIndex = findFirstProductIndex();
+                    if (productDetailsIndex !== -1 && productIndex !== -1 && productDetailsIndex > productIndex) {
                       return (
                         <div className="bg-red-50 border border-red-400 rounded-lg p-4">
                           <div className="flex items-start gap-2">
@@ -1038,7 +1175,7 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
                             <div>
                               <h4 className="font-medium text-red-900 mb-1">Invalid Block Order</h4>
                               <p className="text-sm text-red-800">
-                                The <strong>Product Details block</strong> must appear <strong>before</strong> the <strong>Product block</strong>. Currently, Product Details is at position {productDetailsIndex + 1} and Product is at position {productIndex + 1}. Please reorder your blocks.
+                                The <strong>Product Details block</strong> must appear <strong>before</strong> the <strong>Product block</strong> (including blocks inside conditional sections). Currently, the first Product Details is in position {productDetailsIndex + 1} and the first Product is in position {productIndex + 1}. Please reorder your blocks.
                               </p>
                             </div>
                           </div>
@@ -1107,24 +1244,27 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
                             <Button
                               variant="outline"
                               size="sm"
-                            onClick={() => moveBlockUp(blockIndex)}
-                            disabled={
-                              blockIndex === 0 ||
-                              (block.type === "action" && block.actionBlockType === "product" &&
-                               blockIndex > 0 && blocks[blockIndex - 1].type === "action" && 
-                               blocks[blockIndex - 1].actionBlockType === "product_details")
-                            }
-                            title={
-                              blockIndex === 0 
-                                ? "Already at the top"
-                                : (block.type === "action" && block.actionBlockType === "product" &&
-                                   blockIndex > 0 && blocks[blockIndex - 1].type === "action" && 
-                                   blocks[blockIndex - 1].actionBlockType === "product_details")
-                                  ? "Product block cannot be moved before Product Details block"
-                                  : "Move block up"
-                            }
-                          >
-                            <ArrowUp className="h-4 w-4" />
+                              onClick={() => moveBlockUp(blockIndex)}
+                              disabled={
+                                blockIndex === 0 ||
+                                (block.type === "action" && block.actionBlockType === "product" &&
+                                 blockIndex > 0 && blocks[blockIndex - 1].type === "action" && 
+                                 blocks[blockIndex - 1].actionBlockType === "product_details") ||
+                                (block.type === "conditional" && !canConditionalBlockMoveUp(blockIndex).canMove)
+                              }
+                              title={
+                                blockIndex === 0 
+                                  ? "Already at the top"
+                                  : (block.type === "action" && block.actionBlockType === "product" &&
+                                     blockIndex > 0 && blocks[blockIndex - 1].type === "action" && 
+                                     blocks[blockIndex - 1].actionBlockType === "product_details")
+                                    ? "Product block cannot be moved before Product Details block"
+                                    : (block.type === "conditional" && !canConditionalBlockMoveUp(blockIndex).canMove)
+                                      ? canConditionalBlockMoveUp(blockIndex).reason
+                                      : "Move block up"
+                              }
+                            >
+                              <ArrowUp className="h-4 w-4" />
                             </Button>
                           <Button
                             variant="outline"
@@ -1284,11 +1424,25 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
                               // Remove block from main blocks array and add to conditional content
                               const blockToMove = blocks.find(b => b.id === blockId);
                               if (blockToMove) {
-                                // Store the moved block data
-                                setMovedBlocks(prev => [...prev, blockToMove]);
+                                // Store the moved block data with all properties
+                                setMovedBlocks(prev => [...prev, {
+                                  id: blockToMove.id,
+                                  title: blockToMove.title,
+                                  type: blockToMove.type,
+                                  actionBlockType: blockToMove.actionBlockType,
+                                  questions: blockToMove.questions,
+                                  blockSettings: blockToMove.blockSettings
+                                }]);
                                 
                                 // Remove from main blocks
                                 setBlocks(blocks.filter(b => b.id !== blockId));
+                                
+                                // Remove from expanded blocks at checklist level
+                                setExpandedBlocks(prev => {
+                                  const newSet = new Set(prev);
+                                  newSet.delete(blockId);
+                                  return newSet;
+                                });
                                 
                                 // Add to conditional block's content
                                 const updatedConditionalData = { ...block.conditionalData };
@@ -1326,12 +1480,10 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
                               });
                               
                               if (questionToMove) {
-                                // Store the moved question data
+                                // Store the full moved question data
                                 setMovedQuestions(prev => [...prev, {
-                                  id: questionToMove.id,
-                                  blockId: sourceBlockId,
-                                  title: questionToMove.title,
-                                  type: questionToMove.type
+                                  ...questionToMove,
+                                  blockId: sourceBlockId
                                 }]);
                                 
                                 setBlocks(updatedBlocks);
@@ -1383,23 +1535,15 @@ export function ChecklistBuilder({ checklist, onSave, onCancel }: ChecklistBuild
                               // Find the moved question and restore it to its original block
                               const questionToRestore = movedQuestions.find(q => q.id === questionId);
                               if (questionToRestore) {
-                                // Add back to the original block
+                                // Remove blockId from the restored question
+                                const { blockId, ...questionData } = questionToRestore;
+                                
+                                // Add back to the original block with full data
                                 setBlocks(prev => prev.map(b => {
-                                  if (b.id === questionToRestore.blockId) {
+                                  if (b.id === blockId) {
                                     return {
                                       ...b,
-                                      questions: [...b.questions, {
-                                        id: questionToRestore.id,
-                                        title: questionToRestore.title,
-                                        type: questionToRestore.type as QuestionType,
-                                        description: "",
-                                        required: false,
-                                        enforceable: true,
-                                        legislationId: "",
-                                        articleNumber: "",
-                                        photosAllowed: false,
-                                        filesAllowed: false
-                                      }]
+                                      questions: [...b.questions, questionData]
                                     };
                                   }
                                   return b;
