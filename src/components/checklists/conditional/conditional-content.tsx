@@ -666,12 +666,6 @@ export function ConditionalContent({
     const blockId = existingBlockIds[blockIndex];
     const block = movedBlocks.find(b => b.id === blockId);
     const blockAbove = movedBlocks.find(b => b.id === existingBlockIds[blockIndex - 1]);
-    // Update itemOrder
-    const itemOrder = [...(localContent.itemOrder || [])];
-    itemOrder.push({ type: 'newQuestion', id: newQuestion.id });
-    // Update itemOrder
-    const itemOrder = [...(localContent.itemOrder || [])];
-    itemOrder.push({ type: 'newBlock', id: newBlockId });
     
     if (!block) return;
     
