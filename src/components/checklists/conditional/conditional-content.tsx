@@ -1251,9 +1251,9 @@ export function ConditionalContent({
             const isExpanded = expandedBlocks.has(blockId);
             const existingBlockIds = localContent.existingBlockIds || [];
             
-            // Calculate global position: new blocks + existing blocks up to this point
-            const globalPosition = (localContent.newBlocks?.length || 0) + blockIndex;
-            const totalItemsBeforeExistingQuestions = (localContent.newBlocks?.length || 0) + existingBlockIds.length;
+            // Find the global index in itemOrder
+            const itemOrder = localContent.itemOrder || [];
+            const globalIndex = itemOrder.findIndex(item => item.type === 'existingBlock' && item.id === blockId);
             
             return (
               <div 
@@ -1312,44 +1312,18 @@ export function ConditionalContent({
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => moveExistingBlockUp(blockIndex)}
-                          disabled={
-                            blockIndex === 0 ||
-                            (block.type === "action" && block.actionBlockType === "product" &&
-                             blockIndex > 0 && movedBlocks.find(b => b.id === existingBlockIds[blockIndex - 1])?.type === "action" && 
-                             movedBlocks.find(b => b.id === existingBlockIds[blockIndex - 1])?.actionBlockType === "product_details")
-                          }
-                          title={
-                            blockIndex === 0 
-                              ? "Already at the top"
-                              : (block.type === "action" && block.actionBlockType === "product" &&
-                                 blockIndex > 0 && movedBlocks.find(b => b.id === existingBlockIds[blockIndex - 1])?.type === "action" && 
-                                 movedBlocks.find(b => b.id === existingBlockIds[blockIndex - 1])?.actionBlockType === "product_details")
-                                ? "Product block cannot be moved before Product Details block"
-                                : "Move block up"
-                          }
+                          onClick={() => moveItemUp(globalIndex)}
+                          disabled={globalIndex === 0}
+                          title={globalIndex === 0 ? "Already at the top" : "Move block up"}
                         >
                           <ArrowUp className="h-4 w-4" />
                         </Button>
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => moveExistingBlockDown(blockIndex)}
-                          disabled={
-                            blockIndex === existingBlockIds.length - 1 ||
-                            (block.type === "action" && block.actionBlockType === "product_details" &&
-                             blockIndex < existingBlockIds.length - 1 && movedBlocks.find(b => b.id === existingBlockIds[blockIndex + 1])?.type === "action" && 
-                             movedBlocks.find(b => b.id === existingBlockIds[blockIndex + 1])?.actionBlockType === "product")
-                          }
-                          title={
-                            blockIndex === existingBlockIds.length - 1
-                              ? "Already at the bottom"
-                              : (block.type === "action" && block.actionBlockType === "product_details" &&
-                                 blockIndex < existingBlockIds.length - 1 && movedBlocks.find(b => b.id === existingBlockIds[blockIndex + 1])?.type === "action" && 
-                                 movedBlocks.find(b => b.id === existingBlockIds[blockIndex + 1])?.actionBlockType === "product")
-                                ? "Product Details block cannot be moved after Product block"
-                                : "Move block down"
-                          }
+                          onClick={() => moveItemDown(globalIndex)}
+                          disabled={globalIndex === itemOrder.length - 1}
+                          title={globalIndex === itemOrder.length - 1 ? "Already at the bottom" : "Move block down"}
                         >
                           <ArrowDown className="h-4 w-4" />
                         </Button>
@@ -1634,6 +1608,10 @@ export function ConditionalContent({
             const isExpanded = expandedBlocks.has(questionId);
             const existingQuestionIds = localContent.existingQuestionIds || [];
             
+            // Find the global index in itemOrder
+            const itemOrder = localContent.itemOrder || [];
+            const globalIndex = itemOrder.findIndex(item => item.type === 'existingQuestion' && item.id === questionId);
+            
             return (
               <div 
                 key={questionId} 
@@ -1677,18 +1655,18 @@ export function ConditionalContent({
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => moveExistingQuestionUp(questionIndex)}
-                          disabled={questionIndex === 0}
-                          title={questionIndex === 0 ? "Already at the top" : "Move question up"}
+                          onClick={() => moveItemUp(globalIndex)}
+                          disabled={globalIndex === 0}
+                          title={globalIndex === 0 ? "Already at the top" : "Move question up"}
                         >
                           <ArrowUp className="h-4 w-4" />
                         </Button>
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => moveExistingQuestionDown(questionIndex)}
-                          disabled={questionIndex === existingQuestionIds.length - 1}
-                          title={questionIndex === existingQuestionIds.length - 1 ? "Already at the bottom" : "Move question down"}
+                          onClick={() => moveItemDown(globalIndex)}
+                          disabled={globalIndex === itemOrder.length - 1}
+                          title={globalIndex === itemOrder.length - 1 ? "Already at the bottom" : "Move question down"}
                         >
                           <ArrowDown className="h-4 w-4" />
                         </Button>
