@@ -575,6 +575,15 @@ export function ConditionalContent({
     const item = itemOrder[globalIndex];
     const itemAbove = itemOrder[globalIndex - 1];
     
+    // Constrain reordering: Existing blocks only move within existing blocks
+    if (item.type === 'existingBlock' && itemAbove.type !== 'existingBlock') {
+      return;
+    }
+    // Constrain reordering: Existing questions only move within existing questions
+    if (item.type === 'existingQuestion' && itemAbove.type !== 'existingQuestion') {
+      return;
+    }
+    
     // Product/Product Details validation
     if (item.type === 'newBlock' || item.type === 'existingBlock') {
       const block = item.type === 'newBlock' 
@@ -619,6 +628,15 @@ export function ConditionalContent({
     
     const item = itemOrder[globalIndex];
     const itemBelow = itemOrder[globalIndex + 1];
+    
+    // Constrain reordering: Existing blocks only move within existing blocks
+    if (item.type === 'existingBlock' && itemBelow.type !== 'existingBlock') {
+      return;
+    }
+    // Constrain reordering: Existing questions only move within existing questions
+    if (item.type === 'existingQuestion' && itemBelow.type !== 'existingQuestion') {
+      return;
+    }
     
     // Product/Product Details validation
     if (item.type === 'newBlock' || item.type === 'existingBlock') {
@@ -1004,8 +1022,13 @@ export function ConditionalContent({
 
         {/* Display content items */}
         <div className="space-y-2">
-          {/* New Blocks */}
-          {localContent.newBlocks?.map((block, blockIndex) => {
+          {/* Render items in itemOrder sequence */}
+          {(localContent.itemOrder || []).map((orderItem, globalIndex) => {
+            if (orderItem.type === 'newBlock') {
+              const block = localContent.newBlocks?.find(b => b.id === orderItem.id);
+              if (!block) return null;
+              
+              const blockIndex = localContent.newBlocks?.findIndex(b => b.id === orderItem.id) || 0;
             const isExpanded = expandedBlocks.has(block.id);
             
             return (
@@ -1242,29 +1265,28 @@ export function ConditionalContent({
                 </div>
               </div>
             );
-          })}
-          {/* Existing Blocks */}
-          {localContent.existingBlockIds?.map((blockId, blockIndex) => {
-            const block = movedBlocks.find(b => b.id === blockId);
-            if (!block) return null;
+            } // End of newBlock type
             
-            const isExpanded = expandedBlocks.has(blockId);
+            if (orderItem.type === 'existingBlock') {
+              const block = movedBlocks.find(b => b.id === orderItem.id);
+              if (!block) return null;
+              
+              const blockIndex = (localContent.existingBlockIds || []).findIndex(id => id === orderItem.id);
+            
+            const isExpanded = expandedBlocks.has(orderItem.id);
             const existingBlockIds = localContent.existingBlockIds || [];
-            
-            // Find the global index in itemOrder
             const itemOrder = localContent.itemOrder || [];
-            const globalIndex = itemOrder.findIndex(item => item.type === 'existingBlock' && item.id === blockId);
             
             return (
               <div 
-                key={blockId} 
-                className={`bg-white rounded-lg border border-solid border-purple-400 p-4 ${movedExistingBlockId === blockId ? 'swap-highlight' : ''}`}
+                key={orderItem.id} 
+                className={`bg-white rounded-lg border border-solid border-purple-400 p-4 ${movedExistingBlockId === orderItem.id ? 'swap-highlight' : ''}`}
               >
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div 
                       className="flex items-center gap-2 cursor-pointer flex-1"
-                      onClick={() => toggleBlockExpansion(blockId)}
+                      onClick={() => toggleBlockExpansion(orderItem.id)}
                     >
                       {isExpanded ? (
                         <ChevronDown className="h-4 w-4 text-gray-500" />
@@ -1330,7 +1352,7 @@ export function ConditionalContent({
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => removeExistingBlock(blockId)}
+                          onClick={() => removeExistingBlock(orderItem.id)}
                           title="Restore block to main checklist"
                         >
                           <Trash2 className="h-4 w-4" />
@@ -1380,10 +1402,14 @@ export function ConditionalContent({
                 </div>
               </div>
             );
-          })}
-          {/* New Questions */}
-          {localContent.newQuestions?.map((question, questionIndex) => {
-            const isExpanded = expandedBlocks.has(question.id);
+            } // End of existingBlock type
+            
+            if (orderItem.type === 'newQuestion') {
+              const question = localContent.newQuestions?.find(q => q.id === orderItem.id);
+              if (!question) return null;
+              
+              const questionIndex = localContent.newQuestions?.findIndex(q => q.id === orderItem.id) || 0;
+              const isExpanded = expandedBlocks.has(question.id);
             
             return (
               <div 
@@ -1599,29 +1625,27 @@ export function ConditionalContent({
                 </div>
               </div>
             );
-          })}
-          {/* Existing Questions */}
-          {localContent.existingQuestionIds?.map((questionId, questionIndex) => {
-            const question = movedQuestions.find(q => q.id === questionId);
-            if (!question) return null;
+            } // End of newQuestion type
             
-            const isExpanded = expandedBlocks.has(questionId);
-            const existingQuestionIds = localContent.existingQuestionIds || [];
-            
-            // Find the global index in itemOrder
-            const itemOrder = localContent.itemOrder || [];
-            const globalIndex = itemOrder.findIndex(item => item.type === 'existingQuestion' && item.id === questionId);
+            if (orderItem.type === 'existingQuestion') {
+              const question = movedQuestions.find(q => q.id === orderItem.id);
+              if (!question) return null;
+              
+              const questionIndex = (localContent.existingQuestionIds || []).findIndex(id => id === orderItem.id);
+              const isExpanded = expandedBlocks.has(question.id);
+              const existingQuestionIds = localContent.existingQuestionIds || [];
+              const itemOrder = localContent.itemOrder || [];
             
             return (
               <div 
-                key={questionId} 
-                className={`bg-white rounded-lg border border-solid border-purple-400 p-4 ${movedExistingQuestionId === questionId ? 'swap-highlight' : ''}`}
+                key={orderItem.id} 
+                className={`bg-white rounded-lg border border-solid border-purple-400 p-4 ${movedExistingQuestionId === orderItem.id ? 'swap-highlight' : ''}`}
               >
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div 
                       className="flex items-center gap-2 cursor-pointer flex-1"
-                      onClick={() => toggleBlockExpansion(questionId)}
+                      onClick={() => toggleBlockExpansion(orderItem.id)}
                     >
                       {isExpanded ? (
                         <ChevronDown className="h-4 w-4 text-gray-500" />
@@ -1673,7 +1697,7 @@ export function ConditionalContent({
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => removeExistingQuestion(questionId)}
+                          onClick={() => removeExistingQuestion(orderItem.id)}
                           title="Restore question to original block"
                         >
                           <Trash2 className="h-4 w-4" />
@@ -1744,8 +1768,10 @@ export function ConditionalContent({
                 </div>
               </div>
             );
+            } // End of existingQuestion type
+            
+            return null; // Unknown item type
           })}
-
 
           {totalItems === 0 && (
             <div className="text-center py-6 text-muted-foreground border-2 border-dashed border-gray-300 rounded-lg">
