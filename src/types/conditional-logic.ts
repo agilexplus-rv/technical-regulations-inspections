@@ -78,6 +78,12 @@ export interface NewQuestion {
   legalRefs?: any[];
 }
 
+// Item order entry to track all items in unified order
+export interface ItemOrderEntry {
+  type: 'newBlock' | 'existingBlock' | 'newQuestion' | 'existingQuestion';
+  id: string; // ID of the item (block ID or question ID)
+}
+
 // Conditional block content - what to execute if condition is true or false
 export interface ConditionalContent {
   // Can reference existing blocks/questions (by ID) or contain new ones
@@ -85,6 +91,7 @@ export interface ConditionalContent {
   existingQuestionIds?: string[];
   newBlocks?: (NewActionBlock | NewConditionalBlock)[]; // New blocks to create if condition matches
   newQuestions?: NewQuestion[]; // New questions to create if condition matches
+  itemOrder?: ItemOrderEntry[]; // Unified order of all items for rendering and reordering
 }
 
 // Complete conditional block structure

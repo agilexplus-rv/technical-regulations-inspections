@@ -30,7 +30,7 @@ import {
   ArrowUp,
   ArrowDown
 } from "lucide-react";
-import { ConditionalContent as ConditionalContentType, ConditionalBlockData } from "@/types/conditional-logic";
+import { ConditionalContent as ConditionalContentType, ConditionalBlockData, ItemOrderEntry } from "@/types/conditional-logic";
 import { ActionBlockSelector } from "../action-blocks/action-block-selector";
 import { ActionBlockType } from "../action-blocks/index";
 import { ConditionalBlockEditor } from "./conditional-block-editor";
@@ -72,13 +72,46 @@ export function ConditionalContent({
   isNested = false,
   readOnly = false
 }: ConditionalContentProps) {
-  const [localContent, setLocalContent] = useState<ConditionalContentType>(
-    content || {
+  // Initialize itemOrder from existing arrays if it doesn't exist (backward compatibility)
+  const initializeItemOrder = (c: ConditionalContentType): ConditionalContentType => {
+    if (c.itemOrder && c.itemOrder.length > 0) {
+      return c; // Already has itemOrder
+    }
+    
+    // Build itemOrder from existing arrays in the correct order
+    const itemOrder: ItemOrderEntry[] = [];
+    
+    // Add new blocks first
+    (c.newBlocks || []).forEach(block => {
+      itemOrder.push({ type: 'newBlock', id: block.id });
+    });
+    
+    // Add existing blocks
+    (c.existingBlockIds || []).forEach(id => {
+      itemOrder.push({ type: 'existingBlock', id });
+    });
+    
+    // Add new questions
+    (c.newQuestions || []).forEach(question => {
+      itemOrder.push({ type: 'newQuestion', id: question.id });
+    });
+    
+    // Add existing questions
+    (c.existingQuestionIds || []).forEach(id => {
+      itemOrder.push({ type: 'existingQuestion', id });
+    });
+    
+    return { ...c, itemOrder };
+  };
+
+  const [localContent, setLocalContent] = useState<ConditionalContentType>(() => 
+    initializeItemOrder(content || {
       existingBlockIds: [],
       existingQuestionIds: [],
       newBlocks: [],
-      newQuestions: []
-    }
+      newQuestions: [],
+      itemOrder: []
+    })
   );
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [selectedItemType, setSelectedItemType] = useState<ContentItemType | "">("");
@@ -120,7 +153,12 @@ export function ConditionalContent({
 
   const addExistingBlock = (blockId: string) => {
     const existingBlockIds = [...(localContent.existingBlockIds || []), blockId];
-    handleContentChange({ existingBlockIds });
+    
+    // Update itemOrder
+    const itemOrder = [...(localContent.itemOrder || [])];
+    itemOrder.push({ type: 'existingBlock', id: blockId });
+    
+    handleContentChange({ existingBlockIds, itemOrder });
     const destination = label === "If True" ? "ifTrue" : "ifFalse";
     onMoveExistingBlock?.(blockId, destination);
     
@@ -137,7 +175,12 @@ export function ConditionalContent({
 
   const addExistingQuestion = (questionId: string) => {
     const existingQuestionIds = [...(localContent.existingQuestionIds || []), questionId];
-    handleContentChange({ existingQuestionIds });
+    
+    // Update itemOrder
+    const itemOrder = [...(localContent.itemOrder || [])];
+    itemOrder.push({ type: 'existingQuestion', id: questionId });
+    
+    handleContentChange({ existingQuestionIds, itemOrder });
     const destination = label === "If True" ? "ifTrue" : "ifFalse";
     onMoveExistingQuestion?.(questionId, destination);
     
@@ -234,7 +277,14 @@ export function ConditionalContent({
     };
     
     newBlocks.push(productBlock);
-    handleContentChange({ newBlocks });
+    // Update itemOrder
+    const itemOrder = [...(localContent.itemOrder || [])];
+    if (!hasProductDetails) {
+      itemOrder.push({ type: 'newBlock', id: productDetailsBlockId });
+    }
+    itemOrder.push({ type: 'newBlock', id: productBlockId });
+    
+    handleContentChange({ newBlocks, itemOrder });
     
     // Expand the newly created blocks
     setExpandedBlocks(prev => {
@@ -282,7 +332,12 @@ export function ConditionalContent({
         testData: {}
       }
     }];
-    handleContentChange({ newBlocks });
+    
+    // Update itemOrder
+    const itemOrder = [...(localContent.itemOrder || [])];
+    itemOrder.push({ type: 'newBlock', id: newBlockId });
+    
+    handleContentChange({ newBlocks, itemOrder });
     
     // Expand the newly created block
     setExpandedBlocks(prev => {
@@ -312,7 +367,12 @@ export function ConditionalContent({
       photosAllowed: false,
       filesAllowed: false
     }];
-    handleContentChange({ newQuestions });
+    
+    // Update itemOrder
+    const itemOrder = [...(localContent.itemOrder || [])];
+    itemOrder.push({ type: 'newQuestion', id: questionId });
+    
+    handleContentChange({ newQuestions, itemOrder });
     
     // Expand the newly created question
     setExpandedBlocks(prev => {
@@ -507,7 +567,98 @@ export function ConditionalContent({
     setTimeout(() => setMovedNewQuestionId(null), 500);
   };
 
-  // Move functions for existing blocks
+  // UNIFIED MOVE FUNCTIONS - work with itemOrder for all item types
+  const moveItemUp = (globalIndex: number) => {
+    const itemOrder = localContent.itemOrder || [];
+    if (globalIndex === 0) return; // Already at the top
+    
+    const item = itemOrder[globalIndex];
+    const itemAbove = itemOrder[globalIndex - 1];
+    
+    // Product/Product Details validation
+    if (item.type === 'newBlock' || item.type === 'existingBlock') {
+      const block = item.type === 'newBlock' 
+        ? localContent.newBlocks?.find(b => b.id === item.id)
+        : movedBlocks?.find(b => b.id === item.id);
+      
+      const blockAbove = itemAbove.type === 'newBlock' || itemAbove.type === 'existingBlock'
+        ? (itemAbove.type === 'newBlock' 
+          ? localContent.newBlocks?.find(b => b.id === itemAbove.id)
+          : movedBlocks?.find(b => b.id === itemAbove.id))
+        : null;
+      
+      if (block && 'actionBlockType' in block && block.actionBlockType === "product" &&
+          blockAbove && 'actionBlockType' in blockAbove && blockAbove.actionBlockType === "product_details") {
+        return; // Can't move Product before Product Details
+      }
+    }
+    
+    // Swap items
+    const updatedOrder = [...itemOrder];
+    [updatedOrder[globalIndex - 1], updatedOrder[globalIndex]] = [updatedOrder[globalIndex], updatedOrder[globalIndex - 1]];
+    
+    // Set animation state based on item type
+    if (item.type === 'newBlock') setMovedNewBlockId(item.id);
+    else if (item.type === 'existingBlock') setMovedExistingBlockId(item.id);
+    else if (item.type === 'newQuestion') setMovedNewQuestionId(item.id);
+    else if (item.type === 'existingQuestion') setMovedExistingQuestionId(item.id);
+    
+    setTimeout(() => {
+      setMovedNewBlockId(null);
+      setMovedExistingBlockId(null);
+      setMovedNewQuestionId(null);
+      setMovedExistingQuestionId(null);
+    }, 500);
+    
+    handleContentChange({ itemOrder: updatedOrder });
+  };
+
+  const moveItemDown = (globalIndex: number) => {
+    const itemOrder = localContent.itemOrder || [];
+    if (globalIndex === itemOrder.length - 1) return; // Already at the bottom
+    
+    const item = itemOrder[globalIndex];
+    const itemBelow = itemOrder[globalIndex + 1];
+    
+    // Product/Product Details validation
+    if (item.type === 'newBlock' || item.type === 'existingBlock') {
+      const block = item.type === 'newBlock' 
+        ? localContent.newBlocks?.find(b => b.id === item.id)
+        : movedBlocks?.find(b => b.id === item.id);
+      
+      const blockBelow = itemBelow.type === 'newBlock' || itemBelow.type === 'existingBlock'
+        ? (itemBelow.type === 'newBlock' 
+          ? localContent.newBlocks?.find(b => b.id === itemBelow.id)
+          : movedBlocks?.find(b => b.id === itemBelow.id))
+        : null;
+      
+      if (block && 'actionBlockType' in block && block.actionBlockType === "product_details" &&
+          blockBelow && 'actionBlockType' in blockBelow && blockBelow.actionBlockType === "product") {
+        return; // Can't move Product Details after Product
+      }
+    }
+    
+    // Swap items
+    const updatedOrder = [...itemOrder];
+    [updatedOrder[globalIndex], updatedOrder[globalIndex + 1]] = [updatedOrder[globalIndex + 1], updatedOrder[globalIndex]];
+    
+    // Set animation state based on item type
+    if (item.type === 'newBlock') setMovedNewBlockId(item.id);
+    else if (item.type === 'existingBlock') setMovedExistingBlockId(item.id);
+    else if (item.type === 'newQuestion') setMovedNewQuestionId(item.id);
+    else if (item.type === 'existingQuestion') setMovedExistingQuestionId(item.id);
+    
+    setTimeout(() => {
+      setMovedNewBlockId(null);
+      setMovedExistingBlockId(null);
+      setMovedNewQuestionId(null);
+      setMovedExistingQuestionId(null);
+    }, 500);
+    
+    handleContentChange({ itemOrder: updatedOrder });
+  };
+
+  // OLD Move functions for existing blocks (keeping for backward compatibility but will be replaced)
   const moveExistingBlockUp = (blockIndex: number) => {
     const existingBlockIds = localContent.existingBlockIds || [];
     if (blockIndex === 0) return;
@@ -515,6 +666,12 @@ export function ConditionalContent({
     const blockId = existingBlockIds[blockIndex];
     const block = movedBlocks.find(b => b.id === blockId);
     const blockAbove = movedBlocks.find(b => b.id === existingBlockIds[blockIndex - 1]);
+    // Update itemOrder
+    const itemOrder = [...(localContent.itemOrder || [])];
+    itemOrder.push({ type: 'newQuestion', id: newQuestion.id });
+    // Update itemOrder
+    const itemOrder = [...(localContent.itemOrder || [])];
+    itemOrder.push({ type: 'newBlock', id: newBlockId });
     
     if (!block) return;
     
@@ -1099,6 +1256,10 @@ export function ConditionalContent({
             
             const isExpanded = expandedBlocks.has(blockId);
             const existingBlockIds = localContent.existingBlockIds || [];
+            
+            // Calculate global position: new blocks + existing blocks up to this point
+            const globalPosition = (localContent.newBlocks?.length || 0) + blockIndex;
+            const totalItemsBeforeExistingQuestions = (localContent.newBlocks?.length || 0) + existingBlockIds.length;
             
             return (
               <div 
